@@ -10,7 +10,7 @@
 python main_fastflow_bmad.py \
     --mode train \
     --dataset_path /mnt/disk1/ruslan_nuriev/bmad \
-    --category liver \
+    --category brain \
     --backbone mcunet-in3 \
     --device cuda:0 \
     --save_path ./patch.pt \
