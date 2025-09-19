@@ -1,13 +1,13 @@
 import torch
 from torch.utils.data import Dataset, DataLoader
-from typing import List, Tuple, Dict, Any
+from typing import List, Dict, Any
 
 from moviad.datasets.iad_dataset import IadDataset
 
 
-class PreContinualDataset:
+class ContinualDataset:
     def __init__(self, 
-                 bmad_class: type,
+                 dataset: IadDataset,
                  task_type: str,
                  root_dir: str,
                  categories: List[str] = None,
@@ -17,14 +17,14 @@ class PreContinualDataset:
         Initialize the Continual Dataset using BMAD class.
         
         Args:
-            bmad_class: Your BMAD class (not instance)
-            task_type: Task type for BMAD initialization
-            root_dir: Root path for BMAD dataset
+            dataset: Dataset class
+            task_type: Task type for dataset initialization
+            root_dir: Root path for the dataset
             categories: List of category names (default: 6 BMAD categories)
             split: Split type ('train' or 'test')
-            **bmad_kwargs: Additional arguments for BMAD initialization
+            **bmad_kwargs: Additional arguments for dataset initialization
         """
-        self.bmad_class = bmad_class
+        self.dataset = dataset
         self.task_type = task_type
         self.root_dir = root_dir
         self.split = split
@@ -54,7 +54,7 @@ class PreContinualDataset:
         for task_id, category in enumerate(self.categories):
             try:
                 # Initialize BMAD dataset for this specific category
-                dataset = self.bmad_class(
+                dataset = self.dataset(
                     task_type=self.task_type,
                     root_dir=self.root_dir,
                     category=category,
@@ -177,78 +177,3 @@ class TaskDatasetWrapper(Dataset):
         image, label, mask, image_path = self.base_dataset[idx]
             
         return image, label, mask, image_path
-
-
-class ContinualDataset:
-    """
-    Main class to handle both train and test continual datasets
-    """
-    def __init__(self, 
-                 bmad_class: type,
-                 task_type: str,
-                 root_dir: str,
-                 categories: List[str] = None,
-                 **bmad_kwargs):
-        """
-        Initialize manager for both train and test datasets
-        
-        Args:
-            bmad_class: Your BMAD class
-            task_type: Task type for BMAD
-            root_dir: Root path for BMAD dataset
-            categories: List of category names
-            **bmad_kwargs: Additional BMAD arguments
-        """
-        self.train_dataset = PreContinualDataset(
-            bmad_class=bmad_class,
-            task_type=task_type,
-            root_dir=root_dir,
-            categories=categories,
-            split='train',
-            **bmad_kwargs
-        )
-        
-        self.test_dataset = PreContinualDataset(
-            bmad_class=bmad_class,
-            task_type=task_type,
-            root_dir=root_dir,
-            categories=categories,
-            split='test',
-            **bmad_kwargs
-        )
-
-        self.num_categories = self.train_dataset.num_categories
-        
-    def get_current_task_loaders(self, batch_size: int = 32, 
-                                shuffle_train: bool = True,
-                                shuffle_test: bool = False,
-                                **kwargs):
-        """
-        Get train and test  loaders for current task,
-        
-        Returns:
-            (train_loader, test_loader)
-        """
-        train_loader = self.train_dataset.get_current_task_dataloader(
-            batch_size=batch_size, shuffle=shuffle_train, **kwargs
-        )
-        test_loader = self.test_dataset.get_current_task_dataloader(
-            batch_size=batch_size, shuffle=shuffle_test, **kwargs
-        )
-        
-        return train_loader, test_loader
-    
-    def to_next_task(self):
-        """Move both datasets to next task."""
-        train_next = self.train_dataset.next_task()
-        test_next = self.test_dataset.next_task()
-        return train_next and test_next
-    
-    def reset_tasks(self):
-        """Reset both datasets to first task."""
-        self.train_dataset.reset_tasks()
-        self.test_dataset.reset_tasks()
-    
-    def get_task_info(self):
-        """Get current task information."""
-        return self.train_dataset.get_task_info()

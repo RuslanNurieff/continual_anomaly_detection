@@ -10,7 +10,7 @@ sys.path.append(os.path.join(script_path, "..", ".."))
 
 from moviad.models import Stfpm
 from moviad.trainers.trainer_stfpm import train_param_grid_search
-from moviad.datasets.bmad.bmad_dataet import BMAD, CATEGORIES
+from moviad.datasets.bmad.bmad_dataset import BMAD, CATEGORIES
 from moviad.utilities.evaluator import Evaluator, append_results
 from moviad.utilities.configurations import TaskType, Split
 
