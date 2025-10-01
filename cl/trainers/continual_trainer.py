@@ -12,18 +12,22 @@ from trainers.trainers import create_trainer
 from memories.replay_strategy import ReplayModel
 from collections import defaultdict
 
+from moviad.utilities.evaluator import Evaluator
+
 class ContinualTrainer:
     """Manages the continual learning training process"""
     
     def __init__(self, 
                  strategy: ContinualADModel,
+                 device: str = "cuda:0",
                 ): # evaluator: ContinualEvaluator = None)
         
         self.strategy = strategy
         # self.evaluator = evaluator or ContinualEvaluator()
         self.history = defaultdict(list)
+        self.device = device
         
-    def train(self, continual_dataset: ContinualDataset, epochs_per_task: int = 10):
+    def train(self, continual_dataset: ContinualDataset, epochs_per_task: int = 10, ratio: float = 0.5):
         """Train on all tasks sequentially"""
         
         self.all_task_loaders = []  # Keep for evaluation later
@@ -51,17 +55,22 @@ class ContinualTrainer:
             # Prepare training data (current task + replay buffer)
             if self.strategy.replay_buffer.buffer: #self.strategy.replay_buffer.buffer
                 # Combine current task data with replay buffer
+                batch_size = train_loader.batch_size
+                task_size = int((1 - ratio) * batch_size)
+                replay_size = batch_size - task_size
                 replay_dataset = self.strategy.replay_buffer.get_buffer_dataset()
                 current_task_dataset = train_loader.dataset
                 
                 # Create combined dataset
-                combined_dataset = ConcatDataset([current_task_dataset, replay_dataset])
-                combined_loader = DataLoader(
-                    combined_dataset, 
-                    batch_size=train_loader.batch_size,
-                    shuffle=True,
-                    num_workers=getattr(train_loader, 'num_workers', 0)
-                )
+                # combined_dataset = ConcatDataset([current_task_dataset, replay_dataset])
+                # combined_loader = DataLoader(
+                #     combined_dataset, 
+                #     batch_size=train_loader.batch_size,
+                #     shuffle=True,
+                #     num_workers=getattr(train_loader, 'num_workers', 0)
+                # )
+
+                
                 
                 print(f"Training with {len(current_task_dataset)} current samples + "
                     f"{len(replay_dataset)} replay samples")
@@ -96,3 +105,10 @@ class ContinualTrainer:
                 break
         
         return self.history
+    
+    def evaluate(self, all_task_loader, model):
+        continual_results = {}
+        combined_test_loaders = ConcatDataset([loader.dataset for loader in all_task_loader])
+        evaluator = Evaluator(combined_test_loaders, self.device)
+        for loader in all_task_loader:
+            metrics = evaluator.evaluate(model)

@@ -1,6 +1,6 @@
 from moviad.trainers.trainer_stfpm import TrainerSTFPM
 from moviad.models.stfpm.stfpm import STFPM
-from moviad.datasets.bmad.bmad_dataset import BMAD
+from moviad.datasets.bmad.bmad_dataset import BMAD, CATEGORIES
 from moviad.datasets.mvtec.mvtec_dataset import MVTecDataset
 from torch.utils.data import DataLoader
 import torch
@@ -14,6 +14,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
+import json
+
 import torch.nn.functional as F
 
 def train(dataset_path="/mnt/disk1/ruslan_nuriev/bmad"):
@@ -25,37 +27,46 @@ def train(dataset_path="/mnt/disk1/ruslan_nuriev/bmad"):
         "backbone_model_name": "resnet18",
         "device": "cuda:0",
     }
+    best_results = {}
+    for category in CATEGORIES:
 
-    print(f"Training with params: {params}")
-    train_data = BMAD("segmentation", params["dataset_path"], "liver", "train", image_size=(224, 224))
-    train_dataloader = DataLoader(train_data, batch_size=params['batch_size'], shuffle=True)
-    test_data = BMAD("segmentation", params["dataset_path"], "liver", "test", image_size=(224, 224))
-    test_dataloader = DataLoader(test_data, batch_size=params['batch_size'], shuffle=False)
+        print(f"Training with params: {params} and category of {category}")
+        train_data = BMAD("segmentation", params["dataset_path"], category, "train", image_size=(224, 224))
+        train_dataloader = DataLoader(train_data, batch_size=params['batch_size'], shuffle=True)
+        test_data = BMAD("segmentation", params["dataset_path"], category, "test", image_size=(224, 224))
+        test_dataloader = DataLoader(test_data, batch_size=params['batch_size'], shuffle=False)
 
-    student = CustomFeatureExtractor(params["backbone_model_name"], params["ad_layers"], device=params['device'], frozen=False) #128 - 512
-    teacher = CustomFeatureExtractor(params['backbone_model_name'], params["ad_layers"], device=params['device'])
+        student = CustomFeatureExtractor(params["backbone_model_name"], params["ad_layers"], device=params['device'], frozen=False)
+        teacher = CustomFeatureExtractor(params['backbone_model_name'], params["ad_layers"], device=params['device'])
 
-    model = STFPM(teacher, student)
-    model.train()
-    trainer = TrainerSTFPM(
-        model=model,
-        train_dataloader=train_dataloader,
-        eval_dataloader=test_dataloader,
-        device=params['device'],
-        logger=None,
-        )
-    
-    trainer.train(params['epochs'])
-    torch.save(model.student.model.state_dict(), "/home/ruslan/thesis/checkpoints/model_weights_student.pth")
-    torch.save(model.teacher.model.state_dict(), "/home/ruslan/thesis/checkpoints/model_weights_teacher.pth")
+        model = STFPM(teacher, student)
+        model.train()
+        trainer = TrainerSTFPM(
+            model=model,
+            train_dataloader=train_dataloader,
+            eval_dataloader=test_dataloader,
+            device=params['device'],
+            logger=None,
+            )
+        
+        _, best_result = trainer.train(params['epochs'])
+        best_results[category] = {"img_roc_auc": best_result.img_roc_auc,
+                                  "pxl_roc_auc": best_result.pxl_roc_auc,
+                                  "pxl_pro": best_result.pxl_au_pro}
+        torch.save(model.student.model.state_dict(), f"/home/ruslan/thesis/checkpoints/model_weights_student_{category}.pth")
+        torch.save(model.teacher.model.state_dict(), f"/home/ruslan/thesis/checkpoints/model_weights_teacher_{category}.pth")
 
-    del model
-    del test_data
-    del train_data
-    del train_dataloader
-    del test_dataloader
-    torch.cuda.empty_cache()
-    gc.collect()
+        print(f"For '{category}' category, best results are:\nImage AUROC: {best_results[category]['img_roc_auc']}\nPixel AUROC: {best_results[category]['pxl_roc_auc']}\nPixel PRO: {best_results[category]['pxl_pro']}")
+        del model
+        del test_data
+        del train_data
+        del train_dataloader
+        del test_dataloader
+        torch.cuda.empty_cache()
+        gc.collect()
+
+    with open('/home/ruslan/thesis/tests/file.txt', 'w') as file:
+        file.write(json.dumps(best_results))
 
 def create_binary_anomaly_map_f1(anomaly_maps, ground_truths):
     if isinstance(anomaly_maps, torch.Tensor):
@@ -140,7 +151,7 @@ def visualize_anomaly_comparison(predicted_maps, gt_maps, original_images=None, 
             axes[i, 4].axis('off')
     
     plt.tight_layout()
-    plt.savefig("/home/ruslan/thesis/main_scripts/ex.png")
+    plt.savefig("/home/ruslan/thesis/tests/ex.png")
     return fig
 
 def visualize_binary_map(predicted_maps, gt_maps, n_samples):
@@ -168,7 +179,7 @@ def visualize_binary_map(predicted_maps, gt_maps, n_samples):
         axes[i, 1].axis('off')
 
     plt.tight_layout()
-    plt.savefig("/home/ruslan/thesis/main_scripts/ex_binary.png")
+    plt.savefig("/home/ruslan/thesis/tests/ex_binary.png")
     return fig
 
 
@@ -177,14 +188,14 @@ def test_on_some_instances(dataset_path="/mnt/disk1/ruslan_nuriev/bmad"):
     student = CustomFeatureExtractor("resnet18", ["layer1", "layer2", "layer3"], device="cuda:0") #128 - 512
     teacher = CustomFeatureExtractor("resnet18", ["layer1", "layer2", "layer3"], device="cuda:0")
 
-    test_data = BMAD("segmentation", dataset_path, "liver", "test", image_size=(224, 224))
+    test_data = BMAD("segmentation", dataset_path, "retinaresc", "test", image_size=(224, 224))
     test_dataloader = DataLoader(test_data, batch_size=5, shuffle=True)
     img = next(iter(test_dataloader))
 
 
     model = STFPM(teacher, student)
-    model.student.model.load_state_dict(torch.load("thesis/checkpoints/model_weights_student.pth", weights_only=False))
-    model.teacher.model.load_state_dict(torch.load("thesis/checkpoints/model_weights_teacher.pth", weights_only=False))
+    model.student.model.load_state_dict(torch.load("thesis/checkpoints/model_weights_student_retinaresc.pth", weights_only=False))
+    model.teacher.model.load_state_dict(torch.load("thesis/checkpoints/model_weights_teacher_retinaresc.pth", weights_only=False))
     model.eval()
 
     output, anomaly_scores = model(img[0].to("cuda:0"))
@@ -201,14 +212,14 @@ def visualize_train_data(dataset_path="/mnt/disk1/ruslan_nuriev/bmad"):
     student = CustomFeatureExtractor("resnet18", ["layer1", "layer2", "layer3"], device="cuda:0") #128 - 512
     teacher = CustomFeatureExtractor("resnet18", ["layer1", "layer2", "layer3"], device="cuda:0")
 
-    test_data = BMAD("segmentation", dataset_path, "liver", "train", image_size=(224, 224))
+    test_data = BMAD("segmentation", dataset_path, "retinaresc", "train", image_size=(224, 224))
     test_dataloader = DataLoader(test_data, batch_size=5, shuffle=True)
     img = next(iter(test_dataloader))
 
 
     model = STFPM(teacher, student)
-    model.student.model.load_state_dict(torch.load("thesis/checkpoints/model_weights_student.pth", weights_only=False))
-    model.teacher.model.load_state_dict(torch.load("thesis/checkpoints/model_weights_teacher.pth", weights_only=False))
+    model.student.model.load_state_dict(torch.load("thesis/checkpoints/model_weights_student_retinaresc.pth", weights_only=False))
+    model.teacher.model.load_state_dict(torch.load("thesis/checkpoints/model_weights_teacher_retinaresc.pth", weights_only=False))
     model.eval()
 
     anomaly_map, anomaly_score = model(img.to("cuda:0"))
@@ -223,6 +234,6 @@ def test():
     pass
 
 if __name__ == "__main__":
-    # train()
-    test_on_some_instances()
+    train()
+    # test_on_some_instances()
     # visualize_train_data()

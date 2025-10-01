@@ -3,6 +3,7 @@ from typing import Optional, Tuple, Dict, Any
 
 import torch
 
+from moviad.utilities.custom_feature_extractor_trimmed import CustomFeatureExtractor
 from moviad.models.fastflow.fastflow import create_fastflow
 from moviad.models.rd4ad.rd4ad import RD4AD
 from moviad.models import STFPM
@@ -111,15 +112,18 @@ class RD4ADModel(VADModelBase):
 class STFPMModel(VADModelBase):
     """STFPM (Student-Teacher Feature Pyramid Matching) model implementation."""
     
-    def __init__(self, device: str, backbone: str, ad_layers: str, image_size: Tuple[int, int] = (256, 256)):
-        super().__init__(device, image_size)
+    def __init__(self, device: str, backbone: str, ad_layers: str):
+        super().__init__(device)
         self.backbone = backbone
         self.ad_layers = ad_layers
+        self.device = device
     
     def load_model(self, optimizer_config: Optional[Dict[str, Any]] = None) -> None:
         """Load STFPM model with its specific optimizer configuration."""
         try:
-            self.ad_model = STFPM(self.backbone, self.image_size, self.image_size, self.ad_layers)
+            teacher = CustomFeatureExtractor(self.backbone, self.ad_layers, self.device)
+            student = CustomFeatureExtractor(self.backbone, self.ad_layers, self.device, frozen=False)
+            self.ad_model = STFPM(teacher, student)
             
             # STFPM uses SGD by default
             if optimizer_config is None:

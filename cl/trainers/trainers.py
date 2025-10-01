@@ -1,6 +1,8 @@
 from trainers.vad_models import VADModelBase
 from abc import ABC, abstractmethod
 
+import torch.nn.functional as F
+
 class BaseTrainer(ABC):
     """Base trainer class for all VAD models."""
     
@@ -45,7 +47,12 @@ class STFPMTrainer(BaseTrainer):
     def train_on_batch(self, batch_data):
         batch_data = batch_data.to(self.vad_model.device)
         teacher_features, student_features = self.vad_model.ad_model(batch_data)
-        batch_loss = self.vad_model.loss(teacher_features, student_features)
+        batch_loss = 0
+        for i in range(len(student_features)):
+            teacher_features[i] = F.normalize(teacher_features[i], dim=1)
+            student_features[i] = F.normalize(student_features[i], dim=1)
+            batch_loss += self.vad_model.loss(teacher_features[i], student_features[i])
+    
         return batch_loss
 
 

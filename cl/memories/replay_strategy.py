@@ -18,11 +18,9 @@ class ReplayModel(ContinualADModel):
     """
     
     def __init__(self,
-                model_name: str,
+                model_conf: dict,
                 buffer_size: int = 1000,
                 device: str = "cuda:0",
-                backbone: Optional[str | None] = None,
-                ad_layers: Optional[str | None] = None
                 ):
         """
         Args:
@@ -30,25 +28,23 @@ class ReplayModel(ContinualADModel):
             model_config: Configuration for the underlying AD model
         """
         # Initialize underlying AD model (to be implemented by subclasses)
-        self.model_name = model_name
+        self.model_conf = model_conf
 
         self.ad_model = None
         self.replay_buffer = ReplayBuffer(buffer_size)
         self.current_task = 0
-
-        self.backbone = backbone
-        self.ad_layers = ad_layers
         self.device = device
         
         # Training history
         self.training_history = {}
 
     def _init_model(self):
-        self.ad_model = create_vad_model(self.model_name, self.device, backbone=self.backbone)
+        self.ad_model = self.model_conf['stfpm']
         self.ad_model.load_model()
         self.model = self.ad_model.ad_model
+        self.model.train()
         self.optimizer = self.ad_model.optimizer
-        self.loss = self.ad_model.loss
+        # self.loss = self.ad_model.loss
         self.train_on_batch = create_trainer(self.ad_model).train_on_batch
 
     def begin_task(self, task_id: int):
@@ -59,12 +55,12 @@ class ReplayModel(ContinualADModel):
     
     def partial_update(self, batch: torch.Tensor) -> float:
         """Single training step with replay"""
-        self.model.train()
         # Forward pass
-        outputs = self.model(batch)
+        # outputs = self.model(batch)
         
         # Compute loss
-        loss = self.loss(outputs[0], outputs[1])
+        # loss = self.loss(outputs[0], outputs[1])
+        loss = self.train_on_batch(batch)
         
         # Backward pass
         self.optimizer.zero_grad()
@@ -81,32 +77,29 @@ class ReplayModel(ContinualADModel):
         Args:
             current_task_loader: DataLoader for the task that just finished
         """
-
-        # TODO: this sjould also evaluate the previous tasks with the current state of the model
-        # If there are 3 tasks trained, this method should take all of them separately and evaluate them at each step
-        # Also whether image-level or pixel-level, it should return the metrics for each task prettily
-        # But I don't know, I might also create another function called evaluate just for this purpose under the continual trainer
-        # I hope it's gonna work
-
         print(f"\nEnding task {self.current_task}")
         
-        # Collect all samples from current task
-        current_task_samples = []
-        for batch_data in current_task_loader:
-            images = batch_data
-            for i in range(len(images)):
-                current_task_samples.append(
-                    images[i]
-                )
+        # Calculate how many samples we need upfront
+        if self.current_task == 0:
+            samples_needed = self.replay_buffer.buffer_size
+        else:
+            samples_needed = self.replay_buffer.buffer_size // (self.current_task + 1)
+        
+        # Get dataset and sample efficiently
+        dataset = current_task_loader.dataset
+        total_samples = len(dataset)
+        
+        if samples_needed >= total_samples:
+            # Need all samples - just iterate through dataset directly
+            current_task_samples = [dataset[i] for i in range(total_samples)]
+        else:
+            # Sample randomly without loading everything into memory
+            import random
+            random_indices = random.sample(range(total_samples), samples_needed)
+            current_task_samples = [dataset[i] for i in random_indices]
         
         # Add samples to replay buffer
-        if self.current_task == 0:
-            # First task: add up to buffer_size samples
-            self.replay_buffer.add_samples(current_task_samples, self.current_task, self.replay_buffer.buffer_size)
-        else:
-            # Subsequent tasks: add samples according to the strategy
-            samples_to_add = self.replay_buffer.buffer_size // (self.current_task + 1)
-            self.replay_buffer.add_samples(current_task_samples, self.current_task, samples_to_add)
+        self.replay_buffer.add_samples(current_task_samples, self.current_task, len(current_task_samples))
         
         # Print buffer status
         buffer_info = self.replay_buffer.get_buffer_info()

@@ -1,0 +1,6 @@
+{"brain": {"img_roc_auc": 0.854165650406504, "pxl_roc_auc": 0.9509147372415357, "pxl_pro": 0.7816109815602074},
+"liver": {"img_roc_auc": 0.4938175270108043, "pxl_roc_auc": 0.9673826565398969, "pxl_pro": 0.7452953463062482},
+"retinaoct": {"img_roc_auc": 0.8486954443002528, "pxl_roc_auc": 0, "pxl_pro": 0},
+"chest": {"img_roc_auc": 0.7448749870597718, "pxl_roc_auc": 0, "pxl_pro": 0},
+"histopathology": {"img_roc_auc": 0.8601850384460301, "pxl_roc_auc": 0, "pxl_pro": 0},
+"retinaresc": {"img_roc_auc": 0.8357663040471557, "pxl_roc_auc": 0.9368005015427089, "pxl_pro": 0.7740239250205558}}

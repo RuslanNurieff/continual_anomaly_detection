@@ -87,6 +87,7 @@ class ContinualDataset:
             
         return TaskDatasetWrapper(
             self.category_datasets[task_id],
+            task_id,
             self.split
         )
     
@@ -147,7 +148,7 @@ class ContinualDataset:
 class TaskDatasetWrapper(Dataset):
     """Dataset wrapper for a single continual learning task."""
     
-    def __init__(self, base_dataset: Dataset, split: str):
+    def __init__(self, base_dataset: Dataset, task_id: int, split: str):
         """
         Initialize task dataset wrapper.
         
@@ -157,7 +158,7 @@ class TaskDatasetWrapper(Dataset):
             task_name: Name of the task/category
         """
         self.base_dataset = base_dataset
-        # self.task_id = task_id
+        self.task_id = task_id
         self.split = split
         
     def __len__(self):
@@ -172,7 +173,7 @@ class TaskDatasetWrapper(Dataset):
 
         if self.split == "train":
             image = self.base_dataset[idx]
-            return image
+            return image, self.task_id
         
         image, label, mask, image_path = self.base_dataset[idx]
             
