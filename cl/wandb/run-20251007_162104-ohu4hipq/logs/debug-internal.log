@@ -1,0 +1,11 @@
+{"time":"2025-10-07T16:21:04.637889699+02:00","level":"INFO","msg":"stream: starting","core version":"0.19.7","symlink path":"/home/ruslan/thesis/cl/wandb/run-20251007_162104-ohu4hipq/logs/debug-core.log"}
+{"time":"2025-10-07T16:21:04.747316064+02:00","level":"INFO","msg":"created new stream","id":"ohu4hipq"}
+{"time":"2025-10-07T16:21:04.747336834+02:00","level":"INFO","msg":"stream: started","id":"ohu4hipq"}
+{"time":"2025-10-07T16:21:04.747369646+02:00","level":"INFO","msg":"writer: Do: started","stream_id":"ohu4hipq"}
+{"time":"2025-10-07T16:21:04.747433908+02:00","level":"INFO","msg":"sender: started","stream_id":"ohu4hipq"}
+{"time":"2025-10-07T16:21:04.747524571+02:00","level":"INFO","msg":"handler: started","stream_id":"ohu4hipq"}
+{"time":"2025-10-07T16:21:05.07599947+02:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-10-07T16:21:05.21106913+02:00","level":"INFO","msg":"Pausing system monitor"}
+{"time":"2025-10-07T16:21:05.211122823+02:00","level":"INFO","msg":"Resuming system monitor"}
+{"time":"2025-10-07T16:21:05.211129746+02:00","level":"INFO","msg":"Pausing system monitor"}
+{"time":"2025-10-07T16:21:05.211135587+02:00","level":"INFO","msg":"Resuming system monitor"}

@@ -2,6 +2,8 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from typing import List, Dict, Any
 
+import numpy as np
+
 from moviad.datasets.iad_dataset import IadDataset
 
 
@@ -12,9 +14,10 @@ class ContinualDataset:
                  root_dir: str,
                  categories: List[str] = None,
                  split: str = 'train',
-                 **bmad_kwargs):
+                 random_seed: int | None = None,
+                 **kwargs):
         """
-        Initialize the Continual Dataset using BMAD class.
+        Initialize the Continual Dataset using IADDataset class.
         
         Args:
             dataset: Dataset class
@@ -22,16 +25,16 @@ class ContinualDataset:
             root_dir: Root path for the dataset
             categories: List of category names (default: 6 BMAD categories)
             split: Split type ('train' or 'test')
-            **bmad_kwargs: Additional arguments for dataset initialization
+            **kwargs: Additional arguments for dataset initialization
         """
         self.dataset = dataset
         self.task_type = task_type
         self.root_dir = root_dir
         self.split = split
-        self.bmad_kwargs = bmad_kwargs
+        self.kwargs = kwargs
         
         # Default BMAD categories
-        if categories is None:
+        if (categories is None):
             self.categories = [
                 'liver',
                 'chest', 
@@ -42,6 +45,10 @@ class ContinualDataset:
             ]
         else:
             self.categories = categories
+
+        if random_seed is not None:
+            permutations = np.random.default_rng(seed=random_seed).permutation(len(self.categories)).tolist()
+            self.categories = [self.categories[i] for i in permutations]
             
         self.num_categories = len(self.categories)
         self.current_task = 0
@@ -53,13 +60,13 @@ class ContinualDataset:
     def _load_category_datasets(self):   
         for task_id, category in enumerate(self.categories):
             try:
-                # Initialize BMAD dataset for this specific category
+                # Initialize dataset for this specific category
                 dataset = self.dataset(
                     task_type=self.task_type,
                     root_dir=self.root_dir,
                     category=category,
                     split=self.split,
-                    **self.bmad_kwargs
+                    **self.kwargs
                 )
                 
                 self.category_datasets[task_id] = dataset
@@ -153,7 +160,7 @@ class TaskDatasetWrapper(Dataset):
         Initialize task dataset wrapper.
         
         Args:
-            base_dataset: BMAD dataset for specific category
+            base_dataset: dataset for specific category
             task_id: Task identifier
             task_name: Name of the task/category
         """

@@ -1,0 +1,15 @@
+{"time":"2025-10-07T15:21:27.631144128+02:00","level":"INFO","msg":"stream: starting","core version":"0.19.7","symlink path":"/home/ruslan/thesis/cl/wandb/run-20251007_152127-mv8yiowz/logs/debug-core.log"}
+{"time":"2025-10-07T15:21:27.73959361+02:00","level":"INFO","msg":"created new stream","id":"mv8yiowz"}
+{"time":"2025-10-07T15:21:27.739628777+02:00","level":"INFO","msg":"stream: started","id":"mv8yiowz"}
+{"time":"2025-10-07T15:21:27.73971448+02:00","level":"INFO","msg":"writer: Do: started","stream_id":"mv8yiowz"}
+{"time":"2025-10-07T15:21:27.739711064+02:00","level":"INFO","msg":"handler: started","stream_id":"mv8yiowz"}
+{"time":"2025-10-07T15:21:27.739725431+02:00","level":"INFO","msg":"sender: started","stream_id":"mv8yiowz"}
+{"time":"2025-10-07T15:21:27.999107182+02:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-10-07T15:21:28.167161901+02:00","level":"INFO","msg":"Pausing system monitor"}
+{"time":"2025-10-07T15:21:37.814765888+02:00","level":"INFO","msg":"Resuming system monitor"}
+{"time":"2025-10-07T15:21:37.8549651+02:00","level":"INFO","msg":"Pausing system monitor"}
+{"time":"2025-10-07T15:21:39.902966989+02:00","level":"INFO","msg":"Resuming system monitor"}
+{"time":"2025-10-07T15:25:06.883247052+02:00","level":"INFO","msg":"Pausing system monitor"}
+{"time":"2025-10-07T15:35:20.60081781+02:00","level":"INFO","msg":"Resuming system monitor"}
+{"time":"2025-10-07T15:35:20.643016882+02:00","level":"INFO","msg":"Pausing system monitor"}
+{"time":"2025-10-07T15:35:21.48907207+02:00","level":"INFO","msg":"Resuming system monitor"}

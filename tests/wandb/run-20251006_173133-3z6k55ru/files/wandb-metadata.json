@@ -1,0 +1,53 @@
+{
+  "os":  "Linux-6.5.0-26-generic-x86_64-with-glibc2.35",
+  "python":  "CPython 3.12.9",
+  "startedAt":  "2025-10-06T15:31:33.824714Z",
+  "program":  "/home/ruslan/thesis/tests/testing.ipynb",
+  "codePath":  "tests/testing.ipynb",
+  "git":  {
+    "remote":  "https://github.com/RuslanNurieff/thesis.git",
+    "commit":  "e7d67574ebb900f55c9eea8649f8fcb48846c54e"
+  },
+  "email":  "ruslan.nuri.12@gmail.com",
+  "root":  "/home/ruslan/thesis/tests",
+  "host":  "acquario3",
+  "executable":  "/home/ruslan/miniconda3/envs/py312/bin/python",
+  "cpu_count":  64,
+  "cpu_count_logical":  128,
+  "gpu":  "NVIDIA RTX A6000",
+  "gpu_count":  3,
+  "disk":  {
+    "/":  {
+      "total":  "982820896768",
+      "used":  "789122207744"
+    }
+  },
+  "memory":  {
+    "total":  "540617400320"
+  },
+  "cpu":  {
+    "count":  64,
+    "countLogical":  128
+  },
+  "gpu_nvidia":  [
+    {
+      "name":  "NVIDIA RTX A6000",
+      "memoryTotal":  "51527024640",
+      "cudaCores":  10752,
+      "architecture":  "Ampere"
+    },
+    {
+      "name":  "NVIDIA RTX A6000",
+      "memoryTotal":  "51527024640",
+      "cudaCores":  10752,
+      "architecture":  "Ampere"
+    },
+    {
+      "name":  "NVIDIA RTX A6000",
+      "memoryTotal":  "51527024640",
+      "cudaCores":  10752,
+      "architecture":  "Ampere"
+    }
+  ],
+  "cudaVersion":  "12.2"
+}

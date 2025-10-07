@@ -12,7 +12,8 @@ class StreamManager:
                  task_type: str,
                  root_dir: str,
                  categories: List[str] = None,
-                 **bmad_kwargs):
+                 random_seed: int | None = False,
+                 **kwargs):
         """
         Initialize manager for both train and test datasets
         
@@ -29,16 +30,18 @@ class StreamManager:
             root_dir=root_dir,
             categories=categories,
             split='train',
-            **bmad_kwargs
+            random_seed=random_seed,
+            **kwargs
         )
         
         self.test_dataset = ContinualDataset(
             dataset=dataset,
             task_type=task_type,
             root_dir=root_dir,
-            categories=categories,
+            categories=categories, # randomly choose (if needed) the tasks [0, 5, etc.] by choosing a seed.
             split='test',
-            **bmad_kwargs
+            random_seed=random_seed,
+            **kwargs
         )
 
         self.num_categories = self.train_dataset.num_categories
