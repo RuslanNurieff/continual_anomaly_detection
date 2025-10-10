@@ -32,7 +32,8 @@ class ContinualTrainer:
         self.device = device
         self.use_wandb = logger
         self.global_step = 0
-        
+        self.sequential_metrics = {}
+
         # Initialize wandb if logging is enabled
         if self.use_wandb:
             if wandb_config:
@@ -142,9 +143,7 @@ class ContinualTrainer:
                 
                 avg_loss = np.mean(epoch_losses)
                 print(f"  Epoch {epoch+1}/{epochs_per_task}, Loss: {avg_loss:.4f}")
-                # self.history[f'task_{task_id}_loss'].append(avg_loss)
                 
-                # Log epoch metrics
                 if self.use_wandb:
                     wandb.log({
                         f"task_{task_id}/epoch_loss": avg_loss,
@@ -158,44 +157,39 @@ class ContinualTrainer:
             # End task - update replay buffer
             self.strategy.end_task(train_loader)
             
-            # Log task completion
-            if self.use_wandb:
-                final_buffer_size = len(self.strategy.replay_buffer.buffer) if self.strategy.replay_buffer.buffer else 0
-                wandb.log({
-                    f"task_{task_id}/final_loss": avg_loss,
-                    f"task_{task_id}/buffer_size_after": final_buffer_size,
-                    "task/completed_tasks": task_id + 1
-                }, step=self.global_step)
-            
-            # Sequential evaluation: evaluate on all tasks seen so far
+            # Sequential evaluation
             print(f"\nEvaluating after Task {task_id}...")
-            self._sequential_evaluation(task_id)
-            
+            _, avg_metrics = self._sequential_evaluation(task_id)
+
+            eval_log = {"eval/task_id": task_id}
+
+            for metric_name, metric in avg_metrics.items():
+                eval_log[f"eval/{metric_name}"] = metric
+
+            wandb.log(eval_log, step=self.global_step)
+        
             # Move to next task
             if not continual_dataset.to_next_task():
                 break
         
-        # return self.history
+        return avg_metrics
     
     def _sequential_evaluation(self, current_task_id):
-        """
-        Evaluate on all tasks seen so far (tasks 0 to current_task_id).
-        Calculate and log average metrics across all evaluated tasks.
-        """
+        
         print(f"Evaluating on tasks 0 to {current_task_id}...")
         
         all_task_metrics = {}
-        
         for eval_task_id in range(current_task_id + 1):
             loader_info = self.all_task_loaders[eval_task_id]
             category = loader_info['category']
             test_loader = loader_info['test']
             
-            print(f"  Evaluating on Task {eval_task_id} ({category})...")
+            print(f"Evaluating on Task {eval_task_id} ({category})...")
             
             evaluator = Evaluator(test_loader, self.device)
             results = evaluator.evaluate(self.strategy.model)
-            
+            # add to a temp dict and then average after finishing the evaluation
+            # this way we'll keep the original/initial values of the first task
             self.strategy.model.train()
             
             all_task_metrics[eval_task_id] = {
@@ -204,38 +198,18 @@ class ContinualTrainer:
             }
             
             print(f"Task {eval_task_id} ({category}) Results: {results}")
-            
-            if self.use_wandb:
-                log_dict = {}
-                for metric_name, metric_value in results.items():
-                    log_dict[f"sequential_eval/after_task_{current_task_id}/task_{eval_task_id}_{category}/{metric_name}"] = metric_value
-                wandb.log(log_dict, step=self.global_step)
         
         avg_metrics = self._calculate_average_metrics(all_task_metrics)
         
-        print(f"\n  Average metrics across tasks 0-{current_task_id}: {avg_metrics}")
+        print(f"\nAverage metrics across tasks 0-{current_task_id}: {avg_metrics}")
         
-        if self.use_wandb:
-            avg_log_dict = {}
-            for metric_name, metric_value in avg_metrics.items():
-                avg_log_dict[f"sequential_eval/after_task_{current_task_id}/average/{metric_name}"] = metric_value
-            wandb.log(avg_log_dict, step=self.global_step)
         
         return all_task_metrics, avg_metrics
     
     def _calculate_average_metrics(self, all_task_metrics):
-        """
-        Calculate average of each metric across all evaluated tasks.
-        
-        Args:
-            all_task_metrics: Dict mapping task_id to {'category': str, 'metrics': dict}
-        
-        Returns:
-            Dict of averaged metrics
-        """
         metric_values = defaultdict(list)
         
-        for task_id, task_info in all_task_metrics.items():
+        for _, task_info in all_task_metrics.items():
             metrics = task_info['metrics']
             for metric_name, metric_value in metrics.items():
                 if isinstance(metric_value, (int, float, np.number)):
@@ -243,10 +217,9 @@ class ContinualTrainer:
         
         avg_metrics = {}
         for metric_name, values in metric_values.items():
-            values = np.array(values)
-            avg_metrics[f"{metric_name}_mean"] = np.true_divide(values.sum(), (values != 0).sum())
-            # avg_metrics[f"{metric_name}_std"] = np.std(values)
-        
+            # values = np.array(values)
+            avg_metrics[f"{metric_name}"] = np.nanmean(values) #np.true_divide(values.sum(), np.isfinite(values).sum()), I guess none of the models will output 0, but jic
+                    
         return avg_metrics
 
     #### TODO - use evaluation logging in this function, not in training
@@ -260,12 +233,5 @@ class ContinualTrainer:
 
         for category, result in metrics.items():
             print(f"For {category} category, the results are like: {result}")
-            
-        # Log evaluation metrics per category
-        if self.use_wandb:
-            log_dict = {}
-            for metric_name, metric_value in result.items():
-                log_dict[f"eval/{category}/{metric_name}"] = metric_value
-            wandb.log(log_dict, step=self.global_step)
         
         return metrics
