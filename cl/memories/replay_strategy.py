@@ -39,11 +39,12 @@ class ReplayModel(ContinualADModel):
         self.training_history = {}
 
     def _init_model(self):
-        self.ad_model = self.model_conf['stfpm']
+        self.ad_model = self.model_conf
         self.ad_model.load_model()
         self.model = self.ad_model.ad_model
         self.model.train()
         self.optimizer = self.ad_model.optimizer
+        self.scheduler = self.ad_model.scheduler
         # self.loss = self.ad_model.loss
         self.train_on_batch = create_trainer(self.ad_model).train_on_batch
 
@@ -55,11 +56,6 @@ class ReplayModel(ContinualADModel):
     
     def partial_update(self, batch: torch.Tensor) -> float:
         """Single training step with replay"""
-        # Forward pass
-        # outputs = self.model(batch)
-        
-        # Compute loss
-        # loss = self.loss(outputs[0], outputs[1])
         loss = self.train_on_batch(batch)
         
         # Backward pass

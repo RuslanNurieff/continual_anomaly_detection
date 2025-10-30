@@ -7,11 +7,10 @@
 # - mcunet-in3 [3,6,9] [6,9,12] [9,12,15]
 # - micronet-m1 [1,2,3] [2,3,4] [3,4,5]
 
-python main_scripts/main_fastflow_bmad.py \
+python main_fastflow_bmad.py \
     --mode train \
     --dataset_path /mnt/disk1/ruslan_nuriev/bmad \
-    --category brain \
-    --backbone mobilenet_v2 \
+    --category liver \
+    --backbone resnet18 \
     --device cuda:0 \
-    --save_path ./patch.pt \
     --epochs 50

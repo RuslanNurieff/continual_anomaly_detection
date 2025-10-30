@@ -1,10 +1,10 @@
-from memories.memory_stream import StreamManager
+from cl.memories.memory_stream import StreamManager
 
 from moviad.datasets.bmad.bmad_dataset import BMAD
 
-from memories.replay_strategy import ReplayModel
-from trainers.models import STFPMModel
-from trainers.continual_trainer import ContinualTrainer
+from cl.memories.replay_strategy import ReplayModel
+from cl.trainers.models import STFPMModel
+from cl.trainers.continual_trainer import ContinualTrainer
 
 import wandb
 
@@ -23,6 +23,6 @@ if __name__ == "__main__":
         )
     trainer.train(
         continual_dataset,
-        epochs_per_task=1
+        epochs_per_task=100
         )
 

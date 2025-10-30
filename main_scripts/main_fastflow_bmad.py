@@ -25,16 +25,16 @@ def train_fastflow(dataset_path: str, category: str, backbone: str, save_path: s
     if max_dataset_size is not None:
         train_dataset = torch.utils.data.Subset(train_dataset, range(max_dataset_size))
     print(f"Length train dataset: {len(train_dataset)}")
-    train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=4, shuffle=True)
+    train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=32, shuffle=True)
 
     test_dataset = BMAD(task_type=TaskType.SEGMENTATION, root_dir=dataset_path, category=category, split="test")
     if max_dataset_size is not None:
         test_dataset = torch.utils.data.Subset(test_dataset, range(max_dataset_size))
     print(f"Length test dataset: {len(test_dataset)}")
-    test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=4, shuffle=True)
+    test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=32, shuffle=True)
 
     # define the model
-    model = create_fastflow((256,256), backbone, device)
+    model = create_fastflow((224,224), backbone, device)
 
     trainer = TrainerFastFlow(
         model=model,

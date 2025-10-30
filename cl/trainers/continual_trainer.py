@@ -3,6 +3,7 @@ from memories.memory_stream import ContinualDataset
 
 import wandb
 import torch
+from torch import optim
 from tqdm import tqdm
 import numpy as np
 
@@ -23,16 +24,14 @@ class ContinualTrainer:
                  strategy: ContinualADModel,
                  device: str = "cuda:0",
                  logger: bool = False,
-                 wandb_config: dict = None
+                 wandb_config: dict = None,
+                 **kwargs
                 ): # evaluator: ContinualEvaluator = None)
         
         self.strategy = strategy
-        # self.evaluator = evaluator or ContinualEvaluator()
-        # self.history = defaultdict(list)
         self.device = device
         self.use_wandb = logger
         self.global_step = 0
-        self.sequential_metrics = {}
 
         # Initialize wandb if logging is enabled
         if self.use_wandb:
@@ -115,6 +114,9 @@ class ContinualTrainer:
             else:
                 print(f"Training with {len(train_loader.dataset)} current samples (no replay)")
                 training_loader = train_loader
+
+            if self.strategy.scheduler:
+                self.strategy.scheduler = optim.lr_scheduler.MultiStepLR(self.strategy.optimizer,[epochs_per_task*0.8,epochs_per_task*0.9],gamma=0.2, last_epoch=-1)
     
             for epoch in range(epochs_per_task):
                 epoch_losses = []
@@ -141,6 +143,9 @@ class ContinualTrainer:
                         
                         self.global_step += 1
                 
+                if self.strategy.scheduler:
+                    self.strategy.scheduler.step()
+
                 avg_loss = np.mean(epoch_losses)
                 print(f"  Epoch {epoch+1}/{epochs_per_task}, Loss: {avg_loss:.4f}")
                 
@@ -165,8 +170,9 @@ class ContinualTrainer:
 
             for metric_name, metric in avg_metrics.items():
                 eval_log[f"eval/{metric_name}"] = metric
-
-            wandb.log(eval_log, step=self.global_step)
+                
+            if self.use_wandb:
+                wandb.log(eval_log, step=self.global_step)
         
             # Move to next task
             if not continual_dataset.to_next_task():
@@ -221,17 +227,3 @@ class ContinualTrainer:
             avg_metrics[f"{metric_name}"] = np.nanmean(values) #np.true_divide(values.sum(), np.isfinite(values).sum()), I guess none of the models will output 0, but jic
                     
         return avg_metrics
-
-    #### TODO - use evaluation logging in this function, not in training
-    def evaluate(self, model):
-        categories = [item["category"] for item in self.all_task_loaders]
-        metrics = {k: {} for k in categories}
-        for loader in self.all_task_loaders:
-            evaluator = Evaluator(loader['test'], self.device)
-            results = evaluator.evaluate(model)
-            metrics[loader['category']] = results
-
-        for category, result in metrics.items():
-            print(f"For {category} category, the results are like: {result}")
-        
-        return metrics

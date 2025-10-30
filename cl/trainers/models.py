@@ -2,14 +2,18 @@ from trainers.vad_models import VADModelBase
 from typing import Optional, Tuple, Dict, Any
 
 import torch
+from torch import optim
 
 from moviad.utilities.custom_feature_extractor_trimmed import CustomFeatureExtractor
 from moviad.models.fastflow.fastflow import create_fastflow
 from moviad.models.rd4ad.rd4ad import RD4AD
-from moviad.models import STFPM
+from moviad.models.stfpm.stfpm import STFPM
+from moviad.models.draem.draem import DRAEM
+from moviad.models.draem.loss import FocalLoss, SSIM
 from moviad.trainers.trainer_fastflow import TrainerFastFlow
 from moviad.trainers.trainer_rd4ad import TrainerRD4AD
 from moviad.trainers.trainer_stfpm import TrainerSTFPM
+
 
 class FastFlowModel(VADModelBase):
     """FastFlow model implementation."""
@@ -34,6 +38,7 @@ class FastFlowModel(VADModelBase):
                 self.optimizer = self._create_optimizer(optimizer_config)
             
             self.loss = TrainerFastFlow.fastflow_loss
+            self.scheduler = False
             
         except Exception as e:
             raise RuntimeError(f"Failed to load FastFlow model: {e}")
@@ -61,6 +66,56 @@ class FastFlowModel(VADModelBase):
         else:
             raise ValueError(f"Unsupported optimizer type: {optimizer_type}")
 
+class DRAEMModel(VADModelBase):
+    """FastFlow model implementation."""
+    
+    def __init__(self, device: str):
+        super().__init__(device)
+        self.device = device
+    
+    def load_model(self, optimizer_config: Optional[Dict[str, Any]] = None) -> None:
+        """Load FastFlow model with configurable optimizer."""
+        try:
+            self.ad_model = DRAEM(self.device)
+            self.ad_model.train()
+            
+            # Use default Adam if no config provided
+            if optimizer_config is None:
+                self.optimizer = torch.optim.Adam([
+                                    {'params': self.ad_model.model.parameters(), "lr": 1e-4},
+                                    {'params': self.ad_model.model_seg.parameters(), "lr": 1e-4}
+                                    ])
+            else:
+                self.optimizer = self._create_optimizer(optimizer_config)
+            
+            self.l2_loss = torch.nn.modules.loss.MSELoss()
+            self.ssim_loss = SSIM()
+            self.focal_loss = FocalLoss()
+            self.scheduler = True
+            
+        except Exception as e:
+            raise RuntimeError(f"Failed to load DRAEM model: {e}")
+    
+    def _create_optimizer(self, config: Dict[str, Any]) -> torch.optim.Optimizer:
+        """Create optimizer for FastFlow."""
+        optimizer_type = config.get("type", "adam").lower()
+        lr = config.get("lr", 1e-4)
+        weight_decay = config.get("weight_decay", 0)
+        
+        if optimizer_type == "adam":
+            return torch.optim.Adam([
+                                    {'params': self.ad_model.model.parameters(), "lr": lr, "weight_decay": weight_decay},
+                                    {'params': self.ad_model.model_seg.parameters(), "lr": lr, "weight_decay": weight_decay}
+                                    ])
+        elif optimizer_type == "sgd":
+            momentum = config.get("momentum", 0.9)
+            return torch.optim.SGD([
+                {"params": self.ad_model.model.parameters(), "lr": lr, "momentum": momentum, "weight_decay": weight_decay},
+                {"params": self.ad_model.model_seg.parameters(), "lr": lr, "momentum": momentum, "weight_decay": weight_decay}
+            ])
+        else:
+            raise ValueError(f"Unsupported optimizer type: {optimizer_type}")
+
 
 class RD4ADModel(VADModelBase):
     """RD4AD (Reverse Distillation for Anomaly Detection) model implementation."""
@@ -70,11 +125,14 @@ class RD4ADModel(VADModelBase):
         if backbone is None:
             raise ValueError("You have to define a backbone for Reverse Distillation!")
         self.backbone = backbone
+        self.device = device
+        self.image_size = image_size
     
     def load_model(self, optimizer_config: Optional[Dict[str, Any]] = None) -> None:
         """Load RD4AD model with its specific optimizer configuration."""
         try:
             self.ad_model = RD4AD(self.backbone, self.device, self.image_size)
+            self.ad_model.to(self.device)
             
             # RD4AD has specific optimizer requirements - use defaults or override
             if optimizer_config is None:
@@ -85,7 +143,8 @@ class RD4ADModel(VADModelBase):
                 )
             else:
                 self.optimizer = self._create_optimizer(optimizer_config)
-            
+
+            self.scheduler = False
             self.loss = TrainerRD4AD.loss_function
             
         except Exception as e:
@@ -137,6 +196,7 @@ class STFPMModel(VADModelBase):
                 self.optimizer = self._create_optimizer(optimizer_config)
             
             self.loss = TrainerSTFPM.stfpm_loss
+            self.scheduler = False
             
         except Exception as e:
             raise RuntimeError(f"Failed to load STFPM model: {e}")

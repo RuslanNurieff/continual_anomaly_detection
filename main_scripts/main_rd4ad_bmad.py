@@ -35,12 +35,12 @@ def train_rd4ad(dataset_path: str, category: str, backbone: str, ad_layers: list
     test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=4, shuffle=True)
 
     # define the model
-    model = RD4AD(backbone, device, input_size=(256, 256))
+    model = RD4AD(backbone, device, input_size=(224, 224))
     model.to(device)
     model.train()
 
-    trainer = TrainerRD4AD(model, train_dataloader, test_dataloader, device, False)
-    trainer.train(epochs)
+    trainer = TrainerRD4AD(model, train_dataloader, test_dataloader, device, None)
+    trainer.train(epochs, 5)
 
     # save the model
     if save_path:
