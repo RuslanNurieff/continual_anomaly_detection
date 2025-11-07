@@ -12,7 +12,7 @@ class StreamManager:
                  task_type: str,
                  root_dir: str,
                  categories: List[str] = None,
-                 random_seed: int | None = False,
+                 random_seed: int | None = None,
                  **kwargs):
         """
         Initialize manager for both train and test datasets

@@ -26,7 +26,7 @@ class FastFlowTrainer(BaseTrainer):
     """Trainer for FastFlow models."""
     
     def train_on_batch(self, batch_data):
-        batch_data = batch_data.to(self.vad_model.device)
+        batch_data = batch_data[0].to(self.vad_model.device)
         hidden_variables, jacobians = self.vad_model.ad_model(batch_data)
         batch_loss = self.vad_model.loss(hidden_variables, jacobians)
         return batch_loss
@@ -48,7 +48,7 @@ class DRAEMTrainer(BaseTrainer):
         l2_loss = self.vad_model.l2_loss(gray_rec,gray_batch)
         ssim_loss = self.vad_model.ssim_loss(gray_rec, gray_batch)
 
-        segment_loss = self.focal_loss(out_mask_sm, anomaly_mask)
+        segment_loss = self.vad_model.focal_loss(out_mask_sm, anomaly_mask)
         # print(f"L2 Loss: {l2_loss}, SSIM Loss: {ssim_loss}, Segment Loss: {segment_loss}")
         loss = l2_loss + ssim_loss + segment_loss
 
@@ -59,7 +59,7 @@ class RD4ADTrainer(BaseTrainer):
     """Trainer for RD4AD models."""
 
     def train_on_batch(self, batch_data):
-        batch_data = batch_data.to(self.vad_model.device)
+        batch_data = batch_data[0].to(self.vad_model.device)
         cos_loss = torch.nn.CosineSimilarity()
 
         teacher_features, bn_features, student_features = self.vad_model.ad_model(batch_data)
@@ -80,7 +80,7 @@ class STFPMTrainer(BaseTrainer):
     """Trainer for STFPM models."""
     
     def train_on_batch(self, batch_data):
-        batch_data = batch_data.to(self.vad_model.device)
+        batch_data = batch_data[0].to(self.vad_model.device)
         teacher_features, student_features = self.vad_model.ad_model(batch_data)
         batch_loss = 0
         for i in range(len(student_features)):

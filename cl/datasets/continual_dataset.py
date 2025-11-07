@@ -5,6 +5,7 @@ from typing import List, Dict, Any
 import numpy as np
 
 from moviad.datasets.iad_dataset import IadDataset
+from moviad.models.draem.augmentation import DRAEMContinualDataset
 
 
 class ContinualDataset:
@@ -66,7 +67,7 @@ class ContinualDataset:
                     root_dir=self.root_dir,
                     category=category,
                     split=self.split,
-                    **self.kwargs
+                    norm=self.kwargs.get('norm', True)
                 )
                 
                 self.category_datasets[task_id] = dataset
@@ -91,6 +92,12 @@ class ContinualDataset:
             
         if self.category_datasets[task_id] is None:
             raise ValueError(f"Dataset for task {task_id} ({self.categories[task_id]}) is not available")
+        
+        if self.kwargs.get('draem', False) == True:
+            return DRAEMDatasetWrapper(self.category_datasets[task_id],
+                                       task_id, self.split,
+                                       "/mnt/disk1/manuel_barusco/CL_VAD/adcl_paper/anomaly_dataset/images",
+                                       resize_shape=[256, 256])
             
         return TaskDatasetWrapper(
             self.category_datasets[task_id],
@@ -183,5 +190,41 @@ class TaskDatasetWrapper(Dataset):
             return image, self.task_id
         
         image, label, mask, image_path = self.base_dataset[idx]
+            
+        return image, label, mask, image_path
+
+
+class DRAEMDatasetWrapper(Dataset):
+    """Dataset wrapper for a single continual learning task."""
+    
+    def __init__(self, base_dataset: Dataset, task_id: int, split: str, anomaly_source_path: str, resize_shape: list):
+        """
+        Initialize task dataset wrapper.
+        
+        Args:
+            base_dataset: dataset for specific category
+            task_id: Task identifier
+            task_name: Name of the task/category
+        """
+        self.base_dataset = base_dataset
+        self.task_id = task_id
+        self.split = split
+        self.draem = DRAEMContinualDataset(self.base_dataset, anomaly_source_path, split, resize_shape)
+        
+    def __len__(self):
+        return len(self.base_dataset)
+    
+    def __getitem__(self, idx):
+        """
+        Get item from the task dataset.
+        Returns:    (image) --> train
+                    (image, label, mask, image path) --> test
+        """
+
+        if self.split == "train":
+            image, augmented_image, anomaly_mask, has_anomaly, idx = self.draem[idx]
+            return image, augmented_image, anomaly_mask, has_anomaly, idx, self.task_id
+        
+        image, label, mask, image_path = self.draem[idx]
             
         return image, label, mask, image_path

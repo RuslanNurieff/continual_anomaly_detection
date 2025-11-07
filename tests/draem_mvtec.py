@@ -1,5 +1,5 @@
 from moviad.datasets.bmad.bmad_dataset import BMAD
-from moviad.models.draem.augmentation import DRAEMTrain
+from moviad.models.draem.augmentation import DRAEMContinualDataset
 from moviad.datasets.mvtec.mvtec_dataset import MVTecDataset, CATEGORIES
 
 from moviad.models.draem.draem import DRAEM
@@ -20,9 +20,9 @@ def set_up_dataset(category):
     mvtec_test = MVTecDataset("segmentation", "/mnt/disk1/manuel_barusco/CL_VAD/adcl_paper/data/mvtec", category, "test", norm=False, img_size=(256, 256))
     mvtec_test.load_dataset()
 
-    draem_train = DRAEMTrain(mvtec_train, "/mnt/disk1/manuel_barusco/CL_VAD/adcl_paper/anomaly_dataset/images", split="train", resize_shape=[256, 256])
+    draem_train = DRAEMContinualDataset(mvtec_train, "/mnt/disk1/manuel_barusco/CL_VAD/adcl_paper/anomaly_dataset/images", split="train", resize_shape=[256, 256])
     draem_train = torch.utils.data.DataLoader(draem_train, batch_size=8, shuffle=True)
-    draem_test = DRAEMTrain(mvtec_test, "/mnt/disk1/manuel_barusco/CL_VAD/adcl_paper/anomaly_dataset/images", split="test", resize_shape=[256, 256])
+    draem_test = DRAEMContinualDataset(mvtec_test, "/mnt/disk1/manuel_barusco/CL_VAD/adcl_paper/anomaly_dataset/images", split="test", resize_shape=[256, 256])
     draem_test = torch.utils.data.DataLoader(draem_test, batch_size=8)
     return draem_train, draem_test
 

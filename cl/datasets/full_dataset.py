@@ -33,9 +33,18 @@ class CombinedDataset:
             **kwargs
         )
 
+        self.test_dataset = ContinualDataset(
+            dataset=dataset,
+            task_type=task_type,
+            root_dir=root_dir,
+            categories=categories,
+            split='test',
+            **kwargs
+        )
+
         self.categories = self.train_dataset.categories
 
-    def load_categories(self, batch_size: int = 32):
+    def load_train(self, batch_size: int = 32):
         """
         Combines the category datasets from the given dataset,
         then creates train loader from it.
@@ -46,5 +55,21 @@ class CombinedDataset:
             combined_dataset.append(self.train_dataset.get_task_dataset(task_id))
         
         combined_dataset = torch.utils.data.ConcatDataset(combined_dataset)
-        combined_loader = torch.utils.data.DataLoader(combined_dataset, batch_size=batch_size, shuffle=False)
-        return combined_loader
+        # combined_loader = torch.utils.data.DataLoader(combined_dataset, batch_size=batch_size, shuffle=False)
+        return combined_dataset
+    
+    def load_test(self):
+        """
+        Combines the category datasets from the given dataset,
+        then creates test dataset from it.
+        Returns the combined dataset with category information preserved.
+        """
+        combined_datasets = []
+        
+        for task_id in range(len(self.categories)):
+            task_dataset = self.test_dataset.get_task_dataset(task_id)
+            combined_datasets.append(task_dataset)
+        
+        return combined_datasets
+
+

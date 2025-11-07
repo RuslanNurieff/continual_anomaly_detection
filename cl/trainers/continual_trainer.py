@@ -26,7 +26,7 @@ class ContinualTrainer:
                  logger: bool = False,
                  wandb_config: dict = None,
                  **kwargs
-                ): # evaluator: ContinualEvaluator = None)
+                ):
         
         self.strategy = strategy
         self.device = device
@@ -41,17 +41,48 @@ class ContinualTrainer:
                 wandb.init(project="continual-learning-ad")
             wandb.config.update({"device": device})
 
-    def _augment_with_replay(self, images):
-        """Augment current batch with samples from replay buffer."""
+    def _augment_with_replay(self, batch):
         replay_dataset = self.strategy.replay_buffer.get_buffer_dataset()
-        replay_size = len(images)  # Match the current batch size
+        batch_size = len(batch[0]) if isinstance(batch, tuple) else len(batch)
         
-        replay_samples = [item[0] for item in replay_dataset]
-        indices = torch.randperm(len(replay_samples))[:replay_size]
-        replay_samples = torch.stack([replay_samples[i] for i in indices])
-        replay_samples = replay_samples.to(images.device).type(images.dtype)
+        replay_samples = [item for item in replay_dataset]
+        indices = torch.randperm(len(replay_samples))[:batch_size]
+        selected_replay_samples = [replay_samples[i] for i in indices]
         
-        return torch.cat([images, replay_samples])
+        if isinstance(selected_replay_samples[0], tuple) and len(selected_replay_samples[0]) > 2:
+            # DRAEM case: each sample is (image, augmented_image, anomaly_mask, has_anomaly, idx, task_id)
+            # Need to stack each element separately and concatenate with batch (coz torch.stack doesnn't let you stack tuples)
+            num_elements = len(selected_replay_samples[0])
+            result = []
+            
+            for elem_idx in range(num_elements):
+                elements = [sample[elem_idx] for sample in selected_replay_samples]
+                
+                if isinstance(elements[0], torch.Tensor):
+                    stacked_elem = torch.stack(elements).to(batch[0].device).type(batch[0].dtype)
+                else:
+                    stacked_elem = torch.from_numpy(np.array(elements)).to(batch[0].device) # deals with the last three elements (scalars, like has_anomaly)
+                
+                # Concatenate with current batch element
+                concatenated = torch.cat([batch[elem_idx], stacked_elem])
+                result.append(concatenated)
+            
+            return tuple(result)
+        else:
+            # Other models case: (image, task_id)
+            # Extract just the images (first element)
+            replay_images = torch.stack([sample[0] for sample in selected_replay_samples])
+            replay_images = replay_images.to(batch[0].device).type(batch[0].dtype)
+            
+            # batch[0] is the images tensor, batch[1] is task_id
+            concatenated_images = torch.cat([batch[0], replay_images])
+            
+            # For task_id, we can either keep the original or extend it
+            # Since we're mixing tasks, we'll keep the replay task_ids too
+            replay_task_ids = torch.tensor([sample[1] for sample in selected_replay_samples]).to(batch[0].device)
+            concatenated_task_ids = torch.cat([batch[1], replay_task_ids])
+            
+            return (concatenated_images, concatenated_task_ids)
         
     def train(self, continual_dataset: ContinualDataset, epochs_per_task: int = 10, ratio: float = 0.5):
         """Train on all tasks sequentially"""
@@ -122,10 +153,8 @@ class ContinualTrainer:
                 epoch_losses = []
                 with tqdm(training_loader, desc=f"Epoch {epoch+1}/{epochs_per_task}") as pbar:
                     for batch_idx, batch in enumerate(pbar):
-                        if isinstance(batch, (list, tuple)):
-                            images = batch[0]
-                        else:
-                            images = batch
+                        # batch is a tuple/list from the DataLoader
+                        images = batch
                         
                         if has_replay:
                             images = self._augment_with_replay(images)
@@ -160,6 +189,9 @@ class ContinualTrainer:
                     }, step=self.global_step)
             
             # End task - update replay buffer
+            # NOTE: For DRAEM, this stores the full tuple including pre-computed augmentations.
+            # Ideally, we should store only original images and re-augment during replay,
+            # but this works as a functional solution.
             self.strategy.end_task(train_loader)
             
             # Sequential evaluation
@@ -213,6 +245,7 @@ class ContinualTrainer:
         return all_task_metrics, avg_metrics
     
     def _calculate_average_metrics(self, all_task_metrics):
+        from scipy.stats import tmean
         metric_values = defaultdict(list)
         
         for _, task_info in all_task_metrics.items():
@@ -224,6 +257,6 @@ class ContinualTrainer:
         avg_metrics = {}
         for metric_name, values in metric_values.items():
             # values = np.array(values)
-            avg_metrics[f"{metric_name}"] = np.nanmean(values) #np.true_divide(values.sum(), np.isfinite(values).sum()), I guess none of the models will output 0, but jic
+            avg_metrics[f"{metric_name}"] = tmean(values, (0.01, 1), nan_policy="omit") #np.true_divide(values.sum(), np.isfinite(values).sum()), I guess none of the models will output 0, but jic
                     
         return avg_metrics

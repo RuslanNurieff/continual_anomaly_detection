@@ -1,6 +1,6 @@
 from memories.memory_stream import StreamManager
 
-from moviad.datasets.bmad.bmad_dataset import BMAD
+from moviad.datasets.bmad.bmad_dataset import BMAD, CATEGORIES
 
 from memories.replay_strategy import ReplayModel
 from trainers.models import RD4ADModel
@@ -12,7 +12,7 @@ import json
 wandb.login(key="4f6d843a12185b07fd5f95d3e42b35c1a9f90a51")
 
 def main():
-    continual_dataset = StreamManager(BMAD, task_type="segmentation", root_dir="/mnt/disk1/ruslan_nuriev/bmad", random_seed=21)
+    continual_dataset = StreamManager(BMAD, task_type="segmentation", root_dir="/mnt/disk1/ruslan_nuriev/bmad", categories=list(CATEGORIES))
 
     replay_strategy = ReplayModel(
         model_conf=RD4ADModel("cuda:0", "wide_resnet50_2", (224, 224)),
