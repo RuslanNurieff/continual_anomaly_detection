@@ -256,7 +256,7 @@ class ContinualTrainer:
         
         avg_metrics = {}
         for metric_name, values in metric_values.items():
-            # values = np.array(values)
+            # values = np.array(values) np.nanmean
             avg_metrics[f"{metric_name}"] = tmean(values, (0.01, 1), nan_policy="omit") #np.true_divide(values.sum(), np.isfinite(values).sum()), I guess none of the models will output 0, but jic
                     
         return avg_metrics
