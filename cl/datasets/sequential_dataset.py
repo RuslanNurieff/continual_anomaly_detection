@@ -1,0 +1,2 @@
+class SequentialDataset:
+    pass
