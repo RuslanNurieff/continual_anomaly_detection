@@ -41,12 +41,12 @@ class ContinualTrainer:
                 wandb.init(project="continual-learning-ad")
             wandb.config.update({"device": device})
 
-    def _augment_with_replay(self, batch):
+    def _augment_with_replay(self, batch, replay_size):
         replay_dataset = self.strategy.replay_buffer.get_buffer_dataset()
-        batch_size = len(batch[0]) if isinstance(batch, tuple) else len(batch)
         
         replay_samples = [item for item in replay_dataset]
-        indices = torch.randperm(len(replay_samples))[:batch_size]
+        # Use the specified replay_size instead of current batch size
+        indices = torch.randperm(len(replay_samples))[:replay_size]
         selected_replay_samples = [replay_samples[i] for i in indices]
         
         if isinstance(selected_replay_samples[0], tuple) and len(selected_replay_samples[0]) > 2:
@@ -124,7 +124,7 @@ class ContinualTrainer:
                 }, step=self.global_step)
 
             # Prepare training data (current task + replay buffer)
-            if self.strategy.replay_buffer.buffer: #self.strategy.replay_buffer.buffer
+            if self.strategy.replay_buffer.buffer and ratio > 0: #self.strategy.replay_buffer.buffer
                 # Combine current task data with replay buffer
                 has_replay = True
                 batch_size = train_loader.batch_size
@@ -139,11 +139,14 @@ class ContinualTrainer:
                     shuffle=True)
                 
                 print(f"Training with {len(current_task_dataset)} current samples + "
-                    f"{len(replay_dataset)} replay samples")
+                    f"{len(replay_dataset)} replay samples (ratio: {ratio})")
                 training_loader = loader
                 
             else:
-                print(f"Training with {len(train_loader.dataset)} current samples (no replay)")
+                if ratio == 0:
+                    print(f"Training with {len(train_loader.dataset)} current samples (no replay, ratio=0)")
+                else:
+                    print(f"Training with {len(train_loader.dataset)} current samples (no replay buffer yet)")
                 training_loader = train_loader
 
             if self.strategy.scheduler:
@@ -157,7 +160,7 @@ class ContinualTrainer:
                         images = batch
                         
                         if has_replay:
-                            images = self._augment_with_replay(images)
+                            images = self._augment_with_replay(images, replay_size)
                         
                         loss = self.strategy.partial_update(images)
                         epoch_losses.append(loss)

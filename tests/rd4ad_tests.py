@@ -1,7 +1,5 @@
 from datasets.full_dataset import CombinedDataset
 
-import json
-
 from moviad.datasets.bmad.bmad_dataset import BMAD, CATEGORIES
 from moviad.utilities.evaluator import Evaluator
 
@@ -9,8 +7,6 @@ from memories.replay_strategy import ReplayModel
 from trainers.models import RD4ADModel
 from trainers.continual_trainer import ContinualTrainer
 import wandb
-
-import json
 
 from tqdm import tqdm
 import numpy as np
@@ -177,7 +173,6 @@ def fine_tuning(device, root_dir, epochs):
             print(f"  Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}")
 
             wandb.log({
-                "task_id": task_id,
                 "epoch": epoch + 1,
                 "train_loss": avg_loss
             })
@@ -205,6 +200,8 @@ def fine_tuning(device, root_dir, epochs):
             f"{cat}/pxl_pr_auc": metrics.get('pxl_pr_auc', 0),
             f"{cat}/pxl_au_pro": metrics.get('pxl_au_pro', 0),
         })
+
+    wandb.finish()
 
 
 
@@ -237,7 +234,93 @@ def continual_learning(device, root_dir, epochs):
         epochs_per_task=epochs
     )
 
+def single_model(device, root_dir, epochs):
+    wandb.init(
+        project="rd4ad-tests",
+        name="rd4ad-single-model",
+        config={
+            "model": "RD4AD",
+            "backbone": "wide_resnet50_2",
+            "epochs": epochs,
+            "device": device,
+            "input_size": (224, 224),
+            "dataset": "BMAD"
+        },
+        reinit=True
+    )
+
+    data_seq = StreamManager(BMAD, task_type="segmentation", root_dir=root_dir, categories=list(CATEGORIES))
+
+    for task_id in range(data_seq.num_categories):
+        model_rd4ad = RD4ADModel(device, 'wide_resnet50_2', (224, 224))
+        model_rd4ad.load_model()
+        model_rd4ad.ad_model.train()
+    
+        train_loader, test_loader = data_seq.get_current_task_loaders()
+        cat = data_seq.get_task_info()['category']
+        print(f"Training a new model on {cat}")
+
+        for epoch in range(epochs):
+            epoch_losses = []
+            with tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs}") as pbar:
+                for batch in pbar:
+                    if isinstance(batch, (list, tuple)):
+                        images = batch[0]
+                    else:
+                        images = batch
+
+                    images = images.to(model_rd4ad.device)
+
+                    cos_loss = torch.nn.CosineSimilarity()
+
+                    teacher_features, bn_features, student_features = model_rd4ad.ad_model(images)
+
+                    loss = 0
+                    for i in range(len(teacher_features)):
+                        loss += torch.mean(
+                            1 - cos_loss(
+                                teacher_features[i].view(teacher_features[i].shape[0],-1),
+                                student_features[i].view(student_features[i].shape[0],-1)
+                            )
+                )
+                    
+                    model_rd4ad.optimizer.zero_grad()
+                    loss.backward()
+                    model_rd4ad.optimizer.step()
+
+                    epoch_losses.append(loss.item())
+                    pbar.set_postfix(loss=f"{loss:.4f}")
+
+            avg_loss = np.mean(epoch_losses)
+            print(f"  Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}")
+
+            wandb.log({
+                "epoch": epoch + 1,
+                "train_loss": avg_loss
+            })
+
+        model_rd4ad.ad_model.eval()
+        evaluator = Evaluator(test_loader, model_rd4ad.device)
+        print(f"Evaluating on category \"{cat}\"...")
+        metrics = evaluator.evaluate(model_rd4ad.ad_model)
+        wandb.log({
+            f"{cat}/img_roc_auc": metrics.get('img_roc_auc', 0),
+            f"{cat}/pxl_roc_auc": metrics.get('pxl_roc_auc', 0),
+            f"{cat}/img_f1": metrics.get('img_f1', 0),
+            f"{cat}/pxl_f1": metrics.get('pxl_f1', 0),
+            f"{cat}/img_pr_auc": metrics.get('img_pr_auc', 0),
+            f"{cat}/pxl_pr_auc": metrics.get('pxl_pr_auc', 0),
+            f"{cat}/pxl_au_pro": metrics.get('pxl_au_pro', 0),
+        })
+            
+        if not data_seq.to_next_task():
+            break
+
+    wandb.finish()
+
 if __name__ == "__main__":
-    joint_training("cuda:1", "/mnt/disk1/ruslan_nuriev/bmad", 50)
-    fine_tuning("cuda:1", "/mnt/disk1/ruslan_nuriev/bmad", 50)
-    continual_learning("cuda:1", "/mnt/disk1/ruslan_nuriev/bmad", 50)
+    wandb.login(key="4f6d843a12185b07fd5f95d3e42b35c1a9f90a51")
+    # fine_tuning("cuda:0", "/mnt/disk1/ruslan_nuriev/bmad", 50)
+    # joint_training("cuda:0", "/mnt/disk1/ruslan_nuriev/bmad", 50)
+    # continual_learning("cuda:0", "/mnt/disk1/ruslan_nuriev/bmad", 50)
+    single_model("cuda:0", "/mnt/disk1/ruslan_nuriev/bmad", 50)
