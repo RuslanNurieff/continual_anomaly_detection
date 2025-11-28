@@ -3,12 +3,11 @@ from datasets.full_dataset import CombinedDataset
 from moviad.datasets.bmad.bmad_dataset import BMAD, CATEGORIES
 from moviad.utilities.evaluator import Evaluator
 
-from anomalib.models.image.reverse_distillation.torch_model import ReverseDistillationModel
-
 from memories.replay_strategy import ReplayModel
-from trainers.models import RD4ADModel
+from trainers.models import SuperSimpleNetModel
 from trainers.continual_trainer import ContinualTrainer
 import wandb
+from moviad.models.components.simplenet.loss import SSNLoss
 
 from tqdm import tqdm
 import numpy as np
@@ -19,11 +18,10 @@ from scipy.stats import tmean
 import torch.nn.functional as F
 import wandb
 
-import json
 import random
 
 
-def joint_training(device, root_dir, epochs, seed=42):
+def joint_training(backbone, device, root_dir, epochs, seed=42):
     # Set random seeds for reproducibility
     random.seed(seed)
     np.random.seed(seed)
@@ -36,11 +34,11 @@ def joint_training(device, root_dir, epochs, seed=42):
     
     # Initialize wandb
     wandb.init(
-        project="rd4ad-tests",
-        name="rd4ad-joint-training",
+        project="ssn-tests",
+        name="ssn-joint-training",
         config={
-            "model": "RD4AD",
-            "backbone": "resnet18",
+            "model": "SuperSimpleNet",
+            "backbone": backbone,
             "epochs": epochs,
             "device": device,
             "input_size": (224, 224),
@@ -51,14 +49,16 @@ def joint_training(device, root_dir, epochs, seed=42):
 
     data_full = CombinedDataset(BMAD, task_type="segmentation", root_dir=root_dir, norm=True)
     data_train = data_full.load_train()
-    combined_loader = torch.utils.data.DataLoader(data_train, batch_size=32, shuffle=False)
+    combined_loader = torch.utils.data.DataLoader(data_train, batch_size=8, shuffle=False)
     data_test = data_full.load_test()
     categories = data_full.categories
 
     # Create model and strategy
-    model_rd4ad = RD4ADModel(device, 'resnet18', (224, 224))
-    model_rd4ad.load_model()
-    model_rd4ad.ad_model.train()
+    model_ssn = SuperSimpleNetModel(device, backbone, ["layer2", "layer3"])
+    model_ssn.load_model()
+    model_ssn.ad_model.train()
+    
+    loss_fn = SSNLoss()
 
     for epoch in range(epochs):
         epoch_losses = []
@@ -69,30 +69,28 @@ def joint_training(device, root_dir, epochs, seed=42):
                 else:
                     images = batch
 
-                images = images.to(model_rd4ad.device)
+                images = images.to(model_ssn.device)
+                B,C,H,W = images.shape
+                masks = torch.zeros(B, 1, H, W).to(model_ssn.device)
+                labels = torch.zeros(B).to(model_ssn.device)
 
-                cos_loss = torch.nn.CosineSimilarity()
-
-                teacher_features, student_features = model_rd4ad.ad_model(images)
-
-                loss = 0
-                for i in range(len(teacher_features)):
-                    loss += torch.mean(
-                        1 - cos_loss(
-                            teacher_features[i].view(teacher_features[i].shape[0],-1),
-                            student_features[i].view(student_features[i].shape[0],-1)
-                        )
-            )
+                anomaly_map, anomaly_score, masks, labels = model_ssn.ad_model(
+                    images=images,
+                    masks=masks,
+                    labels=labels,
+                )
+                loss = loss_fn(pred_map=anomaly_map, pred_score=anomaly_score, target_mask=masks, target_label=labels)
                 
-                model_rd4ad.optimizer.zero_grad()
+                model_ssn.optimizer.zero_grad()
                 loss.backward()
-                model_rd4ad.optimizer.step()
+                model_ssn.optimizer.step()                
 
                 epoch_losses.append(loss.item())
                 pbar.set_postfix(loss=f"{loss:.4f}")
         
         avg_loss = np.mean(epoch_losses)
         print(f"  Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}")
+        model_ssn.scheduler.step()
         
         # Log training loss to wandb
         wandb.log({
@@ -100,19 +98,19 @@ def joint_training(device, root_dir, epochs, seed=42):
             "train_loss": avg_loss
         })
     try:
-        torch.save(model_rd4ad.ad_model.state_dict(), "/home/ruslan/thesis/tests/checkpoints/rd4ad_joint_training.pth")
+        torch.save(model_ssn.ad_model.state_dict(), "/home/ruslan/thesis/tests/checkpoints/ssn_joint_training.pth")
     except:
         pass
 
-    model_rd4ad.ad_model.eval()
+    model_ssn.ad_model.eval()
 
     results = {}
     for task_id, test_task in enumerate(data_test):
         cat = categories[task_id]
-        test_dl = torch.utils.data.DataLoader(test_task, batch_size=32, shuffle=False)
-        evaluator = Evaluator(test_dl, model_rd4ad.device)
+        test_dl = torch.utils.data.DataLoader(test_task, batch_size=8, shuffle=False)
+        evaluator = Evaluator(test_dl, model_ssn.device)
         print(f"Evaluating on category \"{cat}\"...")
-        metrics = evaluator.evaluate(model_rd4ad.ad_model)
+        metrics = evaluator.evaluate(model_ssn.ad_model)
         results[cat] = metrics
 
         wandb.log({
@@ -128,7 +126,7 @@ def joint_training(device, root_dir, epochs, seed=42):
     # Finish wandb run
     wandb.finish()
 
-def fine_tuning(device, root_dir, epochs, seed=42):
+def fine_tuning(backbone, device, root_dir, epochs, seed=42):
     # Set random seeds for reproducibility
     random.seed(seed)
     np.random.seed(seed)
@@ -140,11 +138,11 @@ def fine_tuning(device, root_dir, epochs, seed=42):
     torch.backends.cudnn.benchmark = False
     
     wandb.init(
-        project="rd4ad-tests",
-        name="rd4ad-fine-tuning",
+        project="ssn-tests",
+        name="ssn-fine-tuning",
         config={
-            "model": "RD4AD",
-            "backbone": "resnet18",
+            "model": "SuperSimpleNet",
+            "backbone": backbone,
             "epochs": epochs,
             "device": device,
             "input_size": (224, 224),
@@ -153,18 +151,20 @@ def fine_tuning(device, root_dir, epochs, seed=42):
         }
     )
 
-    model_rd4ad = RD4ADModel(device, 'resnet18', (224, 224))
-    model_rd4ad.load_model()
-    model_rd4ad.ad_model.train()
+    model_ssn = SuperSimpleNetModel(device, backbone, ["layer2", "layer3"])
+    model_ssn.load_model()
+    model_ssn.ad_model.train()
 
     data_seq = StreamManager(BMAD, task_type="segmentation", root_dir=root_dir, categories=list(CATEGORIES))
 
     test_task_loaders = []
+    
+    loss_fn = SSNLoss()
 
     for task_id in range(data_seq.num_categories):
-        model_rd4ad.ad_model.train()
+        model_ssn.ad_model.train()
     
-        train_loader, test_loader = data_seq.get_current_task_loaders()
+        train_loader, test_loader = data_seq.get_current_task_loaders(batch_size=8)
         test_task_loaders.append({
             'task_id': task_id,
             'test': test_loader,
@@ -180,30 +180,29 @@ def fine_tuning(device, root_dir, epochs, seed=42):
                     else:
                         images = batch
 
-                    images = images.to(model_rd4ad.device)
+                    images = images.to(model_ssn.device)
+                    B,C,H,W = images.shape
+                    masks = torch.zeros(B, 1, H, W).to(model_ssn.device)
+                    labels = torch.zeros(B).to(model_ssn.device)
 
-                    cos_loss = torch.nn.CosineSimilarity()
-
-                    teacher_features, student_features = model_rd4ad.ad_model(images)
-
-                    loss = 0
-                    for i in range(len(teacher_features)):
-                        loss += torch.mean(
-                            1 - cos_loss(
-                                teacher_features[i].view(teacher_features[i].shape[0],-1),
-                                student_features[i].view(student_features[i].shape[0],-1)
-                            )
-                )
+                    anomaly_map, anomaly_score, masks, labels = model_ssn.ad_model(
+                        images=images,
+                        masks=masks,
+                        labels=labels,
+                    )
+                    loss = loss_fn(pred_map=anomaly_map, pred_score=anomaly_score, target_mask=masks, target_label=labels)
                     
-                    model_rd4ad.optimizer.zero_grad()
+                    model_ssn.optimizer.zero_grad()
                     loss.backward()
-                    model_rd4ad.optimizer.step()
+                    model_ssn.optimizer.step()
 
                     epoch_losses.append(loss.item())
                     pbar.set_postfix(loss=f"{loss:.4f}")
+                    
 
             avg_loss = np.mean(epoch_losses)
             print(f"  Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}")
+            model_ssn.scheduler.step()
 
             wandb.log({
                 "epoch": epoch + 1,
@@ -211,14 +210,14 @@ def fine_tuning(device, root_dir, epochs, seed=42):
             })
 
         results = {}
-        model_rd4ad.ad_model.eval()
+        model_ssn.ad_model.eval()
         for task in test_task_loaders:
             to_log = str(len(test_task_loaders) - 1) + "_seq"
             cat = task['category']
             test_dl = task['test']
-            evaluator = Evaluator(test_dl, model_rd4ad.device)
+            evaluator = Evaluator(test_dl, model_ssn.device)
             print(f"Evaluating on category \"{cat}\"...")
-            metrics = evaluator.evaluate(model_rd4ad.ad_model)
+            metrics = evaluator.evaluate(model_ssn.ad_model)
             results[cat] = metrics
             wandb.log({
                 f"{to_log}/{cat}/img_roc_auc": metrics.get("img_roc_auc", 0),
@@ -238,17 +237,15 @@ def fine_tuning(device, root_dir, epochs, seed=42):
             break
 
     try:
-        torch.save(model_rd4ad.ad_model.state_dict(), "/home/ruslan/thesis/tests/checkpoints/rd4ad_fine_tuning_2.pth")
+        torch.save(model_ssn.ad_model.state_dict(), "/home/ruslan/thesis/tests/checkpoints/ssn_fine_tuning.pth")
     except:
         pass
-    
-    model_rd4ad.ad_model.eval()
 
     wandb.finish()
 
 
 
-def continual_learning(device, root_dir, epochs, seed=42):
+def continual_learning(backbone, device, root_dir, epochs, seed=42):
     # Set random seeds for reproducibility
     random.seed(seed)
     np.random.seed(seed)
@@ -262,38 +259,40 @@ def continual_learning(device, root_dir, epochs, seed=42):
     continual_dataset = StreamManager(BMAD, task_type="segmentation", root_dir=root_dir, categories=list(CATEGORIES))
 
     replay_strategy = ReplayModel(
-        model_conf=RD4ADModel(device, "resnet18", (224, 224)),
+        model_conf=SuperSimpleNetModel(device, backbone, ["layer2", "layer3"]),
         buffer_size=1000
     )
 
     trainer = ContinualTrainer(
         strategy=replay_strategy,
         logger=True,
-        wandb_config={"project": "rd4ad-tests",
-                      "name": "rd4ad-continual-learning",
+        wandb_config={"project": "ssn-tests",
+                      "name": "ssn-continual-learning",
                       "config": {
-                        "model": "RD4AD",
-                        "backbone": "resnet18",
+                        "model": "SuperSimpleNet",
+                        "backbone": backbone,
                         "epochs": epochs,
                         "device": device,
                         "input_size": (224, 224),
                         "dataset": "BMAD",
                         "seed": seed
                     }
-                }
+                },
+        device=device
         )
 
     trainer.train(
         continual_dataset,
-        epochs_per_task=epochs
+        epochs_per_task=epochs,
+        batch_size=8
     )
 
     try:
-        torch.save(trainer.strategy.model.state_dict(), "/home/ruslan/thesis/tests/checkpoints/rd4ad_continual_learning.pth")
+        torch.save(trainer.strategy.model.state_dict(), "/home/ruslan/thesis/tests/checkpoints/ssn_continual_learning.pth")
     except:
         pass
 
-def single_model(device, root_dir, epochs, seed=42):
+def single_model(backbone, device, root_dir, epochs, seed=42):
     # Set random seeds for reproducibility
     random.seed(seed)
     np.random.seed(seed)
@@ -305,32 +304,32 @@ def single_model(device, root_dir, epochs, seed=42):
     torch.backends.cudnn.benchmark = False
     
     wandb.init(
-        project="rd4ad-tests",
-        name="rd4ad-single-model",
+        project="ssn-tests",
+        name="ssn-single-model",
         config={
-            "model": "RD4AD",
-            "backbone": "resnet18",
+            "model": "SuperSimpleNet",
+            "backbone": backbone,
             "epochs": epochs,
             "device": device,
             "input_size": (224, 224),
             "dataset": "BMAD",
             "seed": seed
-        },
-        reinit=True
+        }
     )
 
     data_seq = StreamManager(BMAD, task_type="segmentation", root_dir=root_dir, categories=list(CATEGORIES))
-    data_seq.train_dataset.current_task = 4
-    data_seq.test_dataset.current_task = 4
 
-    for task_id in range(4, data_seq.num_categories):
-        model_rd4ad = RD4ADModel(device, 'resnet18', (224, 224))
-        model_rd4ad.load_model()
-        model_rd4ad.ad_model.train()
+
+    for task_id in range(data_seq.num_categories):
+        model_ssn = SuperSimpleNetModel(device, backbone, ["layer2", "layer3"])
+        model_ssn.load_model()
+        model_ssn.ad_model.train()
     
-        train_loader, test_loader = data_seq.get_current_task_loaders()
+        train_loader, test_loader = data_seq.get_current_task_loaders(batch_size=8)
         cat = data_seq.get_task_info()['category']
         print(f"Training a new model on {cat}")
+
+        loss_fn = SSNLoss()
 
         for epoch in range(epochs):
             epoch_losses = []
@@ -341,40 +340,40 @@ def single_model(device, root_dir, epochs, seed=42):
                     else:
                         images = batch
 
-                    images = images.to(model_rd4ad.device)
+                    images = images.to(model_ssn.device)
+                    B,C,H,W = images.shape
+                    masks = torch.zeros(B, 1, H, W).to(model_ssn.device)
+                    labels = torch.zeros(B).to(model_ssn.device)
 
-                    cos_loss = torch.nn.CosineSimilarity()
-
-                    teacher_features, student_features = model_rd4ad.ad_model(images)
-
-                    loss = 0
-                    for i in range(len(teacher_features)):
-                        loss += torch.mean(
-                            1 - cos_loss(
-                                teacher_features[i].view(teacher_features[i].shape[0],-1),
-                                student_features[i].view(student_features[i].shape[0],-1)
-                            )
-                )
+                    anomaly_map, anomaly_score, masks, labels = model_ssn.ad_model(
+                        images=images,
+                        masks=masks,
+                        labels=labels,
+                    )
+    
+                    loss = loss_fn(pred_map=anomaly_map, pred_score=anomaly_score, target_mask=masks, target_label=labels)
                     
-                    model_rd4ad.optimizer.zero_grad()
+                    model_ssn.optimizer.zero_grad()
                     loss.backward()
-                    model_rd4ad.optimizer.step()
+                    model_ssn.optimizer.step()
+                    
 
                     epoch_losses.append(loss.item())
                     pbar.set_postfix(loss=f"{loss:.4f}")
 
             avg_loss = np.mean(epoch_losses)
             print(f"  Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}")
+            model_ssn.scheduler.step()
 
             wandb.log({
                 "epoch": epoch + 1,
                 "train_loss": avg_loss
             })
 
-        model_rd4ad.ad_model.eval()
-        evaluator = Evaluator(test_loader, model_rd4ad.device)
+        model_ssn.ad_model.eval()
+        evaluator = Evaluator(test_loader, model_ssn.device)
         print(f"Evaluating on category \"{cat}\"...")
-        metrics = evaluator.evaluate(model_rd4ad.ad_model)
+        metrics = evaluator.evaluate(model_ssn.ad_model)
         wandb.log({
             f"{cat}/img_roc_auc": metrics.get('img_roc_auc', 0),
             f"{cat}/pxl_roc_auc": metrics.get('pxl_roc_auc', 0),
@@ -386,7 +385,7 @@ def single_model(device, root_dir, epochs, seed=42):
         })
 
         try:
-            torch.save(model_rd4ad.ad_model.state_dict(), f"/home/ruslan/thesis/tests/checkpoints/rd4ad_single_{cat}.pth")
+            torch.save(model_ssn.ad_model.state_dict(), f"/home/ruslan/thesis/tests/checkpoints/ssn_single_{cat}.pth")
         except:
             pass
             
@@ -395,7 +394,7 @@ def single_model(device, root_dir, epochs, seed=42):
 
     wandb.finish()
 
-def single_brain(device, epochs, seed=42):
+def single_liver(epochs, seed=42):
     # Set random seeds for reproducibility
     random.seed(seed)
     np.random.seed(seed)
@@ -405,59 +404,75 @@ def single_brain(device, epochs, seed=42):
         torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
+    
+    # wandb.init(
+    #     project="ssn-tests",
+    #     name="ssn-single-model",
+    #     config={
+    #         "model": "SuperSimpleNet",
+    #         "backbone": "resnet18",
+    #         "epochs": epochs,
+    #         "device": device,
+    #         "input_size": (224, 224),
+    #         "dataset": "BMAD",
+    #         "seed": seed
+    #     }
+    # )
 
-    data_train = BMAD("segmentation", "/mnt/disk1/ruslan_nuriev/bmad", "brain", "train")
-    train_loader = torch.utils.data.DataLoader(data_train, 32, True)
+    data_train = BMAD("segmentation", '/mnt/disk1/ruslan_nuriev/bmad', 'brain', 'train')
+    data_train = torch.utils.data.DataLoader(data_train, 8, True)
+    data_test = BMAD("segmentation", '/mnt/disk1/ruslan_nuriev/bmad', 'brain', 'test')
+    data_test = torch.utils.data.DataLoader(data_test, 8, False)
 
-    data_test = BMAD("segmentation", "/mnt/disk1/ruslan_nuriev/bmad", "brain", "test")
-    test_loader = torch.utils.data.DataLoader(data_test, 32, False)
+    model_ssn = SuperSimpleNetModel("cuda:2", "wide_resnet50_2", ["layer2", "layer3"])
+    model_ssn.load_model()
+    model_ssn.ad_model.train()
 
-    model_rd4ad = RD4ADModel(device, 'resnet18', (224, 224))
-    model_rd4ad.load_model()
-    model_rd4ad.ad_model.eval()
-
-    print("Training a new model on brain")
+    loss_fn = SSNLoss()
 
     for epoch in range(epochs):
         epoch_losses = []
-        with tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs}") as pbar:
+        with tqdm(data_train, desc=f"Epoch {epoch+1}/{epochs}") as pbar:
             for batch in pbar:
                 if isinstance(batch, (list, tuple)):
                     images = batch[0]
                 else:
                     images = batch
 
-                images = images.to(model_rd4ad.device)
+                images = images.to(model_ssn.device)
+                B,C,H,W = images.shape
+                masks = torch.zeros(B, 1, H, W).to(model_ssn.device)
+                labels = torch.zeros(B).to(model_ssn.device)
 
-                cos_loss = torch.nn.CosineSimilarity()
+                anomaly_map, anomaly_score, masks, labels = model_ssn.ad_model(
+                    images=images,
+                    masks=masks,
+                    labels=labels,
+                )
 
-                teacher_features, student_features = model_rd4ad.ad_model(images)
-
-                loss = 0
-                for i in range(len(teacher_features)):
-                    loss += torch.mean(
-                        1 - cos_loss(
-                            teacher_features[i].view(teacher_features[i].shape[0],-1),
-                            student_features[i].view(student_features[i].shape[0],-1)
-                        )
-            )
+                loss = loss_fn(pred_map=anomaly_map, pred_score=anomaly_score, target_mask=masks, target_label=labels)
                 
-                model_rd4ad.optimizer.zero_grad()
+                model_ssn.optimizer.zero_grad()
                 loss.backward()
-                model_rd4ad.optimizer.step()
+                model_ssn.optimizer.step()
+                
 
                 epoch_losses.append(loss.item())
                 pbar.set_postfix(loss=f"{loss:.4f}")
 
         avg_loss = np.mean(epoch_losses)
         print(f"  Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}")
+        model_ssn.scheduler.step()
 
-
+    model_ssn.ad_model.eval()
+    evaluator = Evaluator(data_test, model_ssn.device)
+    metrics = evaluator.evaluate(model_ssn.ad_model)
+    print(metrics)
 
 if __name__ == "__main__":
-    # wandb.login(key="4f6d843a12185b07fd5f95d3e42b35c1a9f90a51")
-    # single_model("cuda:0", "/mnt/disk1/ruslan_nuriev/bmad", 25)
-    fine_tuning("cuda:2", "/mnt/disk1/ruslan_nuriev/bmad", 25)
-    # joint_training("cuda:0", "/mnt/disk1/ruslan_nuriev/bmad", 25)
-    # continual_learning("cuda:0", "/mnt/disk1/ruslan_nuriev/bmad", 25)
-    single_brain("cuda:1", 1)
+    wandb.login(key="4f6d843a12185b07fd5f95d3e42b35c1a9f90a51")
+    single_model("wide_resnet50_2", "cuda:2", "/mnt/disk1/ruslan_nuriev/bmad", 4)
+    fine_tuning("wide_resnet50_2", "cuda:2", "/mnt/disk1/ruslan_nuriev/bmad", 4)
+    joint_training("wide_resnet50_2", "cuda:2", "/mnt/disk1/ruslan_nuriev/bmad", 4)
+    continual_learning("wide_resnet50_2", "cuda:2", "/mnt/disk1/ruslan_nuriev/bmad", 4)
+    # single_liver(5)

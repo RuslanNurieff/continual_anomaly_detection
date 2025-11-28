@@ -1,6 +1,7 @@
 from memories.memory_stream import StreamManager
 
-from moviad.datasets.bmad.bmad_dataset import BMAD, CATEGORIES
+from moviad.datasets.bmad.bmad_dataset import BMAD
+from moviad.datasets.mvtec.mvtec_dataset import MVTecDataset, CATEGORIES
 
 from memories.replay_strategy import ReplayModel
 from trainers.models import STFPMModel
@@ -14,11 +15,11 @@ import json
 
 def main():
     print(list(CATEGORIES))
-    continual_dataset = StreamManager(BMAD, task_type="segmentation", root_dir="/mnt/disk1/ruslan_nuriev/bmad", categories=list(CATEGORIES))
+    continual_dataset = StreamManager(MVTecDataset, task_type="segmentation", root_dir="/mnt/disk1/manuel_barusco/CL_VAD/adcl_paper/data/mvtec", categories=list(CATEGORIES))
 
     replay_strategy = ReplayModel(
         model_conf=STFPMModel("cuda:0", 'wide_resnet50_2', ['layer1', 'layer2', 'layer3']),
-        buffer_size=1000
+        buffer_size=200
     )
 
     trainer = ContinualTrainer(
@@ -28,10 +29,10 @@ def main():
 
     avg_metrics = trainer.train(
         continual_dataset,
-        epochs_per_task=1
+        epochs_per_task=20
     )
 
-    with open('/home/ruslan/thesis/tests/file_stfpm(test).txt', 'w') as file:
+    with open('/home/ruslan/thesis/tests/file_stfpm(mvtec).txt', 'w') as file:
         file.write(json.dumps(avg_metrics))
 
 if __name__ == "__main__":

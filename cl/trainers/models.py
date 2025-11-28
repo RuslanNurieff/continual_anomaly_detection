@@ -10,18 +10,23 @@ from moviad.models.rd4ad.rd4ad import RD4AD
 from moviad.models.stfpm.stfpm import STFPM
 from moviad.models.draem.draem import DRAEM
 from moviad.models.draem.loss import FocalLoss, SSIM
+from moviad.models.supersimplenet.supersimplenet import SuperSimpleNet
 from moviad.trainers.trainer_fastflow import TrainerFastFlow
 from moviad.trainers.trainer_rd4ad import TrainerRD4AD
 from moviad.trainers.trainer_stfpm import TrainerSTFPM
+from moviad.models.components.simplenet.loss import SSNLoss
+
+from anomalib.models.image.reverse_distillation.torch_model import ReverseDistillationModel
 
 
 class FastFlowModel(VADModelBase):
     """FastFlow model implementation."""
     
-    def __init__(self, device: str, backbone: str, image_size: Tuple[int, int] = (256, 256)):
+    def __init__(self, device: str, backbone: str, image_size: Tuple[int, int] = (224, 224)):
         super().__init__(device, image_size)
+        self.name = "fastflow"
         if backbone is None:
-            raise ValueError("You have to define a backbone for FastFlow!")
+            raise ValueError("You have to define a backbone for SuperSimpleNet!")
         self.backbone = backbone
         self.device = device
         self.image_size = image_size
@@ -66,11 +71,87 @@ class FastFlowModel(VADModelBase):
         else:
             raise ValueError(f"Unsupported optimizer type: {optimizer_type}")
 
+class SuperSimpleNetModel(VADModelBase):
+    """FastFlow model implementation."""
+    
+    def __init__(self, device: str, backbone: str, layers: list, image_size: Tuple[int, int] = (224, 224)):
+        super().__init__(device, image_size)
+        self.name = "supersimplenet"
+        if backbone is None:
+            raise ValueError("You have to define a backbone for FastFlow!")
+        self.backbone = backbone
+        self.device = device
+        self.image_size = image_size
+        self.layers = layers
+    
+    def load_model(self, optimizer_config: Optional[Dict[str, Any]] = None) -> None:
+        """Load FastFlow model with configurable optimizer."""
+        try:
+            feature_extractor = CustomFeatureExtractor(self.backbone, self.layers, self.device).model
+            self.ad_model = SuperSimpleNet(feature_extractor)
+            self.ad_model.to(self.device)
+            
+            # Use default Adam if no config provided
+            if optimizer_config is None:
+                self.optimizer = torch.optim.AdamW(
+            [
+                {
+                    "params": self.ad_model.adaptor.parameters(),
+                    "lr": SuperSimpleNet.DEFAULT_PARAMETERS["adaptor_learning_rate"],
+                    "weight_decay": SuperSimpleNet.DEFAULT_PARAMETERS["adaptor_weight_decay"],
+                },
+                {
+                    "params": self.ad_model.segdec.parameters(),
+                    "lr": SuperSimpleNet.DEFAULT_PARAMETERS["segdec_learning_rate"],
+                    "weight_decay": SuperSimpleNet.DEFAULT_PARAMETERS["segdec_weight_decay"],
+                },
+            ],
+        )
+
+            else:
+                self.optimizer = self._create_optimizer(optimizer_config)
+            
+            self.loss = SSNLoss()
+            self.scheduler = torch.optim.lr_scheduler.MultiStepLR(
+                    self.optimizer,
+                    milestones=SuperSimpleNet.DEFAULT_PARAMETERS["milestones_scheduler"],
+                    gamma=SuperSimpleNet.DEFAULT_PARAMETERS["gamma_scheduler"],
+                )
+
+            
+        except Exception as e:
+            raise RuntimeError(f"Failed to load SuperSimpleNet model: {e}")
+    
+    def _create_optimizer(self, config: Dict[str, Any]) -> torch.optim.Optimizer:
+        # """Create optimizer for FastFlow."""
+        # optimizer_type = config.get("type", "adam").lower()
+        # lr = config.get("lr", 1e-3)
+        # weight_decay = config.get("weight_decay", 0)
+        
+        # if optimizer_type == "adam":
+        #     return torch.optim.Adam(
+        #         self.ad_model.parameters(),
+        #         lr=lr,
+        #         weight_decay=weight_decay
+        #     )
+        # elif optimizer_type == "sgd":
+        #     momentum = config.get("momentum", 0.9)
+        #     return torch.optim.SGD(
+        #         self.ad_model.parameters(),
+        #         lr=lr,
+        #         momentum=momentum,
+        #         weight_decay=weight_decay
+        #     )
+        # else:
+        #     raise ValueError(f"Unsupported optimizer type: {optimizer_type}")
+        pass
+
 class DRAEMModel(VADModelBase):
     """FastFlow model implementation."""
     
     def __init__(self, device: str):
         super().__init__(device)
+        self.name = "draem"
         self.device = device
     
     def load_model(self, optimizer_config: Optional[Dict[str, Any]] = None) -> None:
@@ -122,6 +203,7 @@ class RD4ADModel(VADModelBase):
     
     def __init__(self, device: str, backbone: str, image_size: Tuple[int, int] = (256, 256)):
         super().__init__(device, image_size)
+        self.name = "rd4ad"
         if backbone is None:
             raise ValueError("You have to define a backbone for Reverse Distillation!")
         self.backbone = backbone
@@ -131,13 +213,13 @@ class RD4ADModel(VADModelBase):
     def load_model(self, optimizer_config: Optional[Dict[str, Any]] = None) -> None:
         """Load RD4AD model with its specific optimizer configuration."""
         try:
-            self.ad_model = RD4AD(self.backbone, self.device, self.image_size)
+            self.ad_model = ReverseDistillationModel(self.backbone, self.image_size, ["layer1", "layer2", "layer3"], "multiply")
             self.ad_model.to(self.device)
             
             # RD4AD has specific optimizer requirements - use defaults or override
             if optimizer_config is None:
                 self.optimizer = torch.optim.Adam(
-                    list(self.ad_model.decoder.parameters()) + list(self.ad_model.bn.parameters()),
+                    list(self.ad_model.decoder.parameters()) + list(self.ad_model.bottleneck.parameters()),
                     lr=RD4AD.DEFAULT_PARAMETERS["learning_rate"],
                     betas=RD4AD.DEFAULT_PARAMETERS["betas"],
                 )
@@ -173,6 +255,7 @@ class STFPMModel(VADModelBase):
     
     def __init__(self, device: str, backbone: str, ad_layers: str):
         super().__init__(device)
+        self.name = "stfpm"
         self.backbone = backbone
         self.ad_layers = ad_layers
         self.device = device

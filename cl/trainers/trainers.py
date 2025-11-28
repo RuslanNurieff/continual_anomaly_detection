@@ -31,6 +31,23 @@ class FastFlowTrainer(BaseTrainer):
         batch_loss = self.vad_model.loss(hidden_variables, jacobians)
         return batch_loss
 
+class SuperSimpleNetTrainer(BaseTrainer):
+    """Trainer for FastFlow models."""
+    
+    def train_on_batch(self, batch_data):
+        batch_data = batch_data[0].to(self.vad_model.device)
+        B,C,H,W = batch_data.shape
+        masks = torch.zeros(B, 1, H, W).to(self.vad_model.device)
+        labels = torch.zeros(B).to(self.vad_model.device)
+
+        anomaly_map, anomaly_score, masks, labels = self.vad_model.ad_model(
+            images=batch_data,
+            masks=masks,
+            labels=labels,
+        )
+        batch_loss = self.vad_model.loss(pred_map=anomaly_map, pred_score=anomaly_score, target_mask=masks, target_label=labels)
+        return batch_loss
+
 class DRAEMTrainer(BaseTrainer):
     """Trainer for DRAEM models."""
 
@@ -62,7 +79,7 @@ class RD4ADTrainer(BaseTrainer):
         batch_data = batch_data[0].to(self.vad_model.device)
         cos_loss = torch.nn.CosineSimilarity()
 
-        teacher_features, bn_features, student_features = self.vad_model.ad_model(batch_data)
+        teacher_features, student_features = self.vad_model.ad_model(batch_data)
 
         batch_loss = 0
         for i in range(len(teacher_features)):
@@ -98,6 +115,8 @@ def create_trainer(vad_model: VADModelBase) -> BaseTrainer:
     
     if model_name == "fastflow":
         return FastFlowTrainer(vad_model)
+    elif model_name =="supersimplenet":
+        return SuperSimpleNetTrainer(vad_model)
     elif model_name == "rd4ad":
         return RD4ADTrainer(vad_model)
     elif model_name == "stfpm":

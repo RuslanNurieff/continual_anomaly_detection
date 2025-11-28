@@ -1,1 +1,9 @@
 /wandb
+*.txt
+*.pth
+stfpm_continual_0
+stfpm_continual_1
+stfpm_continual_2
+stfpm_continual_3
+stfpm_continual_4
+stfpm_continual_5

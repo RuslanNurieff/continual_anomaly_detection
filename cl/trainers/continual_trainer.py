@@ -6,7 +6,7 @@ import torch
 from torch import optim
 from tqdm import tqdm
 import numpy as np
-
+import json
 from torch.utils.data import ConcatDataset, DataLoader
 
 from memories.replay_strategy import ReplayModel
@@ -39,7 +39,6 @@ class ContinualTrainer:
                 wandb.init(**wandb_config)
             else:
                 wandb.init(project="continual-learning-ad")
-            wandb.config.update({"device": device})
 
     def _augment_with_replay(self, batch, replay_size):
         replay_dataset = self.strategy.replay_buffer.get_buffer_dataset()
@@ -84,7 +83,7 @@ class ContinualTrainer:
             
             return (concatenated_images, concatenated_task_ids)
         
-    def train(self, continual_dataset: ContinualDataset, epochs_per_task: int = 10, ratio: float = 0.5):
+    def train(self, continual_dataset: ContinualDataset, epochs_per_task: int = 10, ratio: float = 0.5, batch_size: int = 32):
         """Train on all tasks sequentially"""
         
         self.all_task_loaders = []  # Keep for evaluation later
@@ -105,7 +104,7 @@ class ContinualTrainer:
             print('='*50)
             
             # Get data loaders
-            train_loader, test_loader = continual_dataset.get_current_task_loaders()
+            train_loader, test_loader = continual_dataset.get_current_task_loaders(batch_size)
             self.all_task_loaders.append({
                 'task_id': task_id,
                 'test': test_loader,
@@ -150,7 +149,7 @@ class ContinualTrainer:
                 training_loader = train_loader
 
             if self.strategy.scheduler:
-                self.strategy.scheduler = optim.lr_scheduler.MultiStepLR(self.strategy.optimizer,[epochs_per_task*0.8,epochs_per_task*0.9],gamma=0.2, last_epoch=-1)
+                scheduler = self.strategy.scheduler
     
             for epoch in range(epochs_per_task):
                 epoch_losses = []
@@ -176,7 +175,7 @@ class ContinualTrainer:
                         self.global_step += 1
                 
                 if self.strategy.scheduler:
-                    self.strategy.scheduler.step()
+                    scheduler.step()
 
                 avg_loss = np.mean(epoch_losses)
                 print(f"  Epoch {epoch+1}/{epochs_per_task}, Loss: {avg_loss:.4f}")
@@ -241,6 +240,8 @@ class ContinualTrainer:
             print(f"Task {eval_task_id} ({category}) Results: {results}")
         
         avg_metrics = self._calculate_average_metrics(all_task_metrics)
+        with open(f"/home/ruslan/thesis/tests/results/{self.strategy.ad_model.name}_continual_{current_task_id}_mv.txt", "w") as file:
+            file.write(json.dumps(all_task_metrics, indent=6))
         
         print(f"\nAverage metrics across tasks 0-{current_task_id}: {avg_metrics}")
         
@@ -260,6 +261,6 @@ class ContinualTrainer:
         avg_metrics = {}
         for metric_name, values in metric_values.items():
             # values = np.array(values) np.nanmean
-            avg_metrics[f"{metric_name}"] = tmean(values, (0.01, 1), nan_policy="omit") #np.true_divide(values.sum(), np.isfinite(values).sum()), I guess none of the models will output 0, but jic
+            avg_metrics[f"{metric_name}"] = tmean(values, (0.0001, 1), nan_policy="omit") #np.true_divide(values.sum(), np.isfinite(values).sum()), I guess none of the models will output 0, but jic
                     
         return avg_metrics
