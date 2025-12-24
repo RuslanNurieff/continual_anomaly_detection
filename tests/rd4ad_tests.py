@@ -259,28 +259,16 @@ def continual_learning(device, root_dir, epochs, seed=42):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     
-    continual_dataset = StreamManager(BMAD, task_type="segmentation", root_dir=root_dir, categories=list(CATEGORIES))
+    continual_dataset = StreamManager(BMAD, task_type="segmentation", root_dir=root_dir, categories=["brain", "liver", "retinaresc"])
 
     replay_strategy = ReplayModel(
-        model_conf=RD4ADModel(device, "resnet18", (224, 224)),
+        model_conf=RD4ADModel(device, "wide_resnet50_2", (224, 224)),
         buffer_size=1000
     )
 
     trainer = ContinualTrainer(
         strategy=replay_strategy,
-        logger=True,
-        wandb_config={"project": "rd4ad-tests",
-                      "name": "rd4ad-continual-learning",
-                      "config": {
-                        "model": "RD4AD",
-                        "backbone": "resnet18",
-                        "epochs": epochs,
-                        "device": device,
-                        "input_size": (224, 224),
-                        "dataset": "BMAD",
-                        "seed": seed
-                    }
-                }
+        logger=False,
         )
 
     trainer.train(
@@ -289,7 +277,7 @@ def continual_learning(device, root_dir, epochs, seed=42):
     )
 
     try:
-        torch.save(trainer.strategy.model.state_dict(), "/home/ruslan/thesis/tests/checkpoints/rd4ad_continual_learning.pth")
+        torch.save(trainer.strategy.model.state_dict(), "/home/ruslan/thesis/tests/rd4ad_wide/rd4ad_continual_learning.pth")
     except:
         pass
 
@@ -406,15 +394,15 @@ def single_brain(device, epochs, seed=42):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
-    data_train = BMAD("segmentation", "/mnt/disk1/ruslan_nuriev/bmad", "brain", "train")
+    data_train = BMAD("segmentation", "/mnt/disk1/ruslan_nuriev/bmad", "retinaresc", "train")
     train_loader = torch.utils.data.DataLoader(data_train, 32, True)
 
-    data_test = BMAD("segmentation", "/mnt/disk1/ruslan_nuriev/bmad", "brain", "test")
-    test_loader = torch.utils.data.DataLoader(data_test, 32, False)
+    # data_test = BMAD("segmentation", "/mnt/disk1/ruslan_nuriev/bmad", "brain", "test")
+    # test_loader = torch.utils.data.DataLoader(data_test, 32, False)
 
-    model_rd4ad = RD4ADModel(device, 'resnet18', (224, 224))
+    model_rd4ad = RD4ADModel(device, 'wide_resnet50_2', (224, 224))
     model_rd4ad.load_model()
-    model_rd4ad.ad_model.eval()
+    model_rd4ad.ad_model.train()
 
     print("Training a new model on brain")
 
@@ -451,13 +439,15 @@ def single_brain(device, epochs, seed=42):
 
         avg_loss = np.mean(epoch_losses)
         print(f"  Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}")
+    
+    torch.save(model_rd4ad.ad_model.state_dict(), "/home/ruslan/thesis/tests/rd4ad_wide/retinaresc.pth")
 
 
 
 if __name__ == "__main__":
     # wandb.login(key="4f6d843a12185b07fd5f95d3e42b35c1a9f90a51")
     # single_model("cuda:0", "/mnt/disk1/ruslan_nuriev/bmad", 25)
-    fine_tuning("cuda:2", "/mnt/disk1/ruslan_nuriev/bmad", 25)
+    # fine_tuning("cuda:2", "/mnt/disk1/ruslan_nuriev/bmad", 25)
     # joint_training("cuda:0", "/mnt/disk1/ruslan_nuriev/bmad", 25)
-    # continual_learning("cuda:0", "/mnt/disk1/ruslan_nuriev/bmad", 25)
-    single_brain("cuda:1", 1)
+    continual_learning("cuda:0", "/mnt/disk1/ruslan_nuriev/bmad", 25)
+    # single_brain("cuda:1", 25)

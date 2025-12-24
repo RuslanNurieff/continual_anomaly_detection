@@ -253,26 +253,13 @@ def continual_learning(device, root_dir, epochs, seed=42):
     continual_dataset = StreamManager(BMAD, task_type="segmentation", root_dir=root_dir, categories=list(CATEGORIES))
 
     replay_strategy = ReplayModel(
-        model_conf=STFPMModel(device, 'wide_resnet50_2', ['layer1', 'layer2', 'layer3']),
+        model_conf=STFPMModel(device, 'resnet18', ['layer1', 'layer2', 'layer3'], preload=False),
         buffer_size=1000
     )
 
     trainer = ContinualTrainer(
         strategy=replay_strategy,
-        logger=True,
-        wandb_config={"project": "stfpm-tests",
-                      "name": "stfpm-continual-learning",
-                      "config": {
-                        "model": "STFPM",
-                        "backbone": "resnet18",
-                        "epochs": epochs,
-                        "device": device,
-                        "input_size": (224, 224),
-                        "dataset": "BMAD",
-                        "seed": seed
-                    },
-                        "reinit": True
-                },
+        logger=False,
         device=device
         )
 
@@ -282,8 +269,8 @@ def continual_learning(device, root_dir, epochs, seed=42):
     )
 
     try:
-        torch.save(trainer.strategy.model.student.model.state_dict(), f"/home/ruslan/thesis/tests/checkpoints/stfpm/stfpm_student_cl.pth")
-        torch.save(trainer.strategy.model.teacher.model.state_dict(), f"/home/ruslan/thesis/tests/checkpoints/stfpm/stfpm_teacher_cl.pth")
+        torch.save(trainer.strategy.model.student.model.state_dict(), f"/home/ruslan/thesis/tests/checkpoints/stfpm/stfpm_student_cl_cont.pth")
+        torch.save(trainer.strategy.model.teacher.model.state_dict(), f"/home/ruslan/thesis/tests/checkpoints/stfpm/stfpm_teacher_cl_cont.pth")
     except:
         pass
 
@@ -298,29 +285,29 @@ def single_model(device, root_dir, epochs, seed=42):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     
-    wandb.init(
-        project="stfpm-tests",
-        name="stfpm-single-model",
-        config={
-            "model": "STFPM",
-            "backbone": "resnet18",
-            "epochs": epochs,
-            "device": device,
-            "input_size": (224, 224),
-            "dataset": "BMAD",
-            "seed": seed
-        },
-        reinit=True
-    )
+    # wandb.init(
+    #     project="stfpm-tests",
+    #     name="stfpm-single-model",
+    #     config={
+    #         "model": "STFPM",
+    #         "backbone": "resnet18",
+    #         "epochs": epochs,
+    #         "device": device,
+    #         "input_size": (224, 224),
+    #         "dataset": "BMAD",
+    #         "seed": seed
+    #     },
+    #     reinit=True
+    # )
 
-    data_seq = StreamManager(BMAD, task_type="segmentation", root_dir=root_dir, categories=list(CATEGORIES))
+    data_seq = StreamManager(BMAD, task_type="segmentation", root_dir=root_dir, categories=["brain", "liver", "retinaresc"])
 
     for task_id in range(data_seq.num_categories):
-        model_stfpm = STFPMModel(device, 'resnet18', ['layer1', 'layer2', 'layer3'])
+        model_stfpm = STFPMModel(device, 'wide_resnet50_2', ['layer1', 'layer2', 'layer3'])
         model_stfpm.load_model()
         model_stfpm.ad_model.train()
     
-        train_loader, test_loader = data_seq.get_current_task_loaders()
+        train_loader, _ = data_seq.get_current_task_loaders()
         cat = data_seq.get_task_info()['category']
         print(f"Training a new model on {cat}")
 
@@ -353,35 +340,35 @@ def single_model(device, root_dir, epochs, seed=42):
             avg_loss = np.mean(epoch_losses)
             print(f"  Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}")
 
-            wandb.log({
-                "epoch": epoch + 1,
-                "train_loss": avg_loss
-            })
+            # wandb.log({
+            #     "epoch": epoch + 1,
+            #     "train_loss": avg_loss
+            # })
 
         try:
-            torch.save(model_stfpm.ad_model.student.model.state_dict(), f"/home/ruslan/thesis/tests/checkpoints/stfpm/stfpm_student_single_model.pth")
-            torch.save(model_stfpm.ad_model.teacher.model.state_dict(), f"/home/ruslan/thesis/tests/checkpoints/stfpm/stfpm_teacher_single_model.pth")
+            torch.save(model_stfpm.ad_model.student.model.state_dict(), f"/home/ruslan/thesis/tests/stfpm_wide/stfpm_student_single_model_{cat}.pth")
+            torch.save(model_stfpm.ad_model.teacher.model.state_dict(), f"/home/ruslan/thesis/tests/stfpm_wide/stfpm_teacher_single_model_{cat}.pth")
         except:
             pass
 
-        model_stfpm.ad_model.eval()
-        evaluator = Evaluator(test_loader, model_stfpm.device)
-        print(f"Evaluating on category \"{cat}\"...")
-        metrics = evaluator.evaluate(model_stfpm.ad_model)
-        wandb.log({
-            f"{cat}/img_roc_auc": metrics.get('img_roc_auc', 0),
-            f"{cat}/pxl_roc_auc": metrics.get('pxl_roc_auc', 0),
-            # f"{cat}/img_f1": metrics.get('img_f1', 0),
-            # f"{cat}/pxl_f1": metrics.get('pxl_f1', 0),
-            # f"{cat}/img_pr_auc": metrics.get('img_pr_auc', 0),
-            # f"{cat}/pxl_pr_auc": metrics.get('pxl_pr_auc', 0),
-            # f"{cat}/pxl_au_pro": metrics.get('pxl_au_pro', 0),
-        })
+        # model_stfpm.ad_model.eval()
+        # evaluator = Evaluator(test_loader, model_stfpm.device)
+        # print(f"Evaluating on category \"{cat}\"...")
+        # metrics = evaluator.evaluate(model_stfpm.ad_model)
+        # wandb.log({
+        #     f"{cat}/img_roc_auc": metrics.get('img_roc_auc', 0),
+        #     f"{cat}/pxl_roc_auc": metrics.get('pxl_roc_auc', 0),
+        #     # f"{cat}/img_f1": metrics.get('img_f1', 0),
+        #     # f"{cat}/pxl_f1": metrics.get('pxl_f1', 0),
+        #     # f"{cat}/img_pr_auc": metrics.get('img_pr_auc', 0),
+        #     # f"{cat}/pxl_pr_auc": metrics.get('pxl_pr_auc', 0),
+        #     # f"{cat}/pxl_au_pro": metrics.get('pxl_au_pro', 0),
+        # })
             
         if not data_seq.to_next_task():
             break
 
-    wandb.finish()
+    # wandb.finish()
 
 def single_brain(device, epochs, seed=42):
     # Set random seeds for reproducibility
@@ -398,12 +385,12 @@ def single_brain(device, epochs, seed=42):
     data_train = BMAD("segmentation", "/mnt/disk1/ruslan_nuriev/bmad", "liver", "train")
     train_loader = torch.utils.data.DataLoader(data_train, 32, True)
 
-    data_test = BMAD("segmentation", "/mnt/disk1/ruslan_nuriev/bmad", "liver", "test")
-    test_loader = torch.utils.data.DataLoader(data_test, 32, False)
+    # data_test = BMAD("segmentation", "/mnt/disk1/ruslan_nuriev/bmad", "liver", "test")
+    # test_loader = torch.utils.data.DataLoader(data_test, 32, False)
 
-    model_rd4ad = STFPMModel("cuda:0", 'resnet18', ['layer1', 'layer2', 'layer3'])
+    model_rd4ad = STFPMModel("cuda:1", 'resnet18', ['layer1', 'layer2', 'layer3'], preload=False)
     model_rd4ad.load_model()
-    model_rd4ad.ad_model.eval()
+    model_rd4ad.ad_model.train()
 
     print("Training a new model on brain")
 
@@ -436,19 +423,20 @@ def single_brain(device, epochs, seed=42):
         avg_loss = np.mean(epoch_losses)
         print(f"  Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}")
 
-    model_rd4ad.ad_model.eval()
-    evaluator = Evaluator(test_loader, model_rd4ad.device)
-    cat = "brain"
-    print(f"Evaluating on category \"{cat}\"...")
-    metrics = evaluator.evaluate(model_rd4ad.ad_model)
+    torch.save(model_rd4ad.ad_model.student.model.state_dict(), "/home/ruslan/thesis/tests/stfpm_tst/std_tst.pth")
+    torch.save(model_rd4ad.ad_model.teacher.model.state_dict(), "/home/ruslan/thesis/tests/stfpm_tst/tcr_tst.pth")
+    # model_rd4ad.ad_model.eval()
+    # evaluator = Evaluator(test_loader, model_rd4ad.device)
+    # cat = "brain"
+    # print(f"Evaluating on category \"{cat}\"...")
+    # metrics = evaluator.evaluate(model_rd4ad.ad_model)
 
-    wandb.finish()
+    # wandb.finish()
 
 if __name__ == "__main__":
     # wandb.login(key="4f6d843a12185b07fd5f95d3e42b35c1a9f90a51")
     # fine_tuning("cuda:1", "/mnt/disk1/ruslan_nuriev/bmad", 25)
     # single_model("cuda:1", "/mnt/disk1/ruslan_nuriev/bmad", 25)
     # joint_training("cuda:1", "/mnt/disk1/ruslan_nuriev/bmad", 25)
-    # continual_learning("cuda:0", "/mnt/disk1/ruslan_nuriev/bmad", 25)
-    single_brain("cuda:0", 2)
-
+    continual_learning("cuda:0", "/mnt/disk1/ruslan_nuriev/bmad", 25)
+    # single_brain("cuda:0", 25)
